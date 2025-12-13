@@ -1,0 +1,33 @@
+# Backend
+backend/__pycache__/
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/*.db
+backend/.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# ML
+ml_cvs/__pycache__/
+ml_cvs/models/*.pth
+ml_cvs/models/*.h5
+ml_cvs/data/
+*.pyc
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+venv/
+*.egg-info/
+__pycache__/
