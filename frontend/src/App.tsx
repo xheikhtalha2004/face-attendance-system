@@ -6,7 +6,12 @@ import StudentRegistry from './components/StudentRegistry';
 import Reports from './components/Reports';
 import Home from './components/Home';
 import Settings from './components/Settings';
+import { TimetablePage } from './components/TimetablePage';
+import EnhancedRecognition from './components/EnhancedRecognition';
+import { SessionAttendanceTable } from './components/SessionAttendanceTable';
 import { AppProvider } from './context/AppContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import LoginPage from './components/LoginPage';
 
 const MainLayout: React.FC = () => {
   const [currentView, setCurrentView] = useState('home');
@@ -16,7 +21,10 @@ const MainLayout: React.FC = () => {
       case 'home': return <Home onNavigate={setCurrentView} />;
       case 'dashboard': return <Dashboard />;
       case 'live': return <LiveAttendance />;
+      case 'recognition': return <EnhancedRecognition />;
       case 'students': return <StudentRegistry />;
+      case 'timetable': return <TimetablePage />;
+      case 'attendance': return <SessionAttendanceTable autoRefresh={true} />;
       case 'reports': return <Reports />;
       case 'settings': return <Settings />;
       default: return <Home onNavigate={setCurrentView} />;
@@ -26,7 +34,7 @@ const MainLayout: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans">
       <Navbar onNavigate={setCurrentView} currentView={currentView} />
-      
+
       <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {renderContent()}
       </main>
@@ -45,11 +53,33 @@ const MainLayout: React.FC = () => {
   );
 }
 
-const App: React.FC = () => {
+const AuthenticatedApp: React.FC = () => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="spinner"></div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
   return (
     <AppProvider>
       <MainLayout />
     </AppProvider>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AuthenticatedApp />
+    </AuthProvider>
   );
 };
 

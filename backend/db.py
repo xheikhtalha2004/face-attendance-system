@@ -43,8 +43,9 @@ class Student(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationship
+    # Relationships
     attendance_records = db.relationship('Attendance', backref='student', lazy=True, cascade='all, delete-orphan')
+    embeddings = db.relationship('StudentEmbedding', backref='student', lazy=True, cascade='all, delete-orphan')
     
     def to_dict(self):
         return {
@@ -61,29 +62,46 @@ class Student(db.Model):
 
 
 class Attendance(db.Model):
-    """Attendance records model"""
+    """Attendance records model - session-based with unique constraint"""
     __tablename__ = 'attendance'
     
     id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('sessions.id'), nullable=True)  # Nullable for migration
     student_id_fk = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    status = db.Column(db.String(20), default='Present')  # Present, Late, Absent
-    confidence = db.Column(db.Float)
-    method = db.Column(db.String(50), default='auto')  # auto (face recognition) or manual
+    check_in_time = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    last_seen_time = db.Column(db.DateTime)  # For continuous tracking
+    status = db.Column(db.String(20), default='PRESENT')  # PRESENT, LATE, ABSENT
+    confidence = db.Column(db.Float)  # Similarity/distance score
+    method = db.Column(db.String(50), default='AUTO')  # AUTO (face recognition) or MANUAL
     notes = db.Column(db.Text)
+    snapshot_path = db.Column(db.String(255))  # Optional snapshot of detected face
+    
+    # Unique constraint: one attendance record per student per session
+    __table_args__ = (
+        db.UniqueConstraint('session_id', 'student_id_fk', name='uq_session_student'),
+    )
     
     def to_dict(self):
         student = Student.query.get(self.student_id_fk)
+        session = Session.query.get(self.session_id) if self.session_id else None
+        
         return {
             'id': str(self.id),
+            'sessionId': self.session_id,
             'studentId': str(self.student_id_fk),
             'studentName': student.name if student else 'Unknown',
-            'timestamp': self.timestamp.isoformat(),
+            'checkInTime': self.check_in_time.isoformat() if self.check_in_time else None,
+            'lastSeenTime': self.last_seen_time.isoformat() if self.last_seen_time else None,
             'status': self.status,
             'confidence': round(self.confidence, 2) if self.confidence else 0,
             'method': self.method,
-            'notes': self.notes
+            'notes': self.notes,
+            'snapshotPath': self.snapshot_path,
+            # Include session info if available
+            'courseName': session.course.course_name if session and session.course else None,
+            'professorName': session.course.professor_name if session and session.course else None
         }
+
 
 
 class Settings(db.Model):
@@ -101,6 +119,130 @@ class Settings(db.Model):
             'value': self.value,
             'updatedAt': self.updated_at.isoformat()
         }
+
+
+class Course(db.Model):
+    """Course master data"""
+    __tablename__ = 'courses'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    course_id = db.Column(db.String(50), unique=True, nullable=False)  # e.g., "CS101"
+    course_name = db.Column(db.String(200), nullable=False)
+    professor_name = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    time_slots = db.relationship('TimeSlot', backref='course', lazy=True, cascade='all, delete-orphan')
+    sessions = db.relationship('Session', backref='course', lazy=True)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'courseId': self.course_id,
+            'courseName': self.course_name,
+            'professorName': self.professor_name,
+            'description': self.description,
+            'isActive': self.is_active,
+            'createdAt': self.created_at.isoformat(),
+            'updatedAt': self.updated_at.isoformat()
+        }
+
+
+class TimeSlot(db.Model):
+    """Weekly timetable slots"""
+    __tablename__ = 'time_slots'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    day_of_week = db.Column(db.String(10), nullable=False)  # MONDAY, TUESDAY, etc.
+    slot_number = db.Column(db.Integer, nullable=False)  # 1-5
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
+    start_time = db.Column(db.String(5), nullable=False)  # "08:30"
+    end_time = db.Column(db.String(5), nullable=False)    # "09:50"
+    late_threshold_minutes = db.Column(db.Integer, default=5)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Unique constraint: one course per day/slot combination
+    __table_args__ = (
+        db.UniqueConstraint('day_of_week', 'slot_number', name='uq_day_slot'),
+    )
+    
+    # Relationships
+    sessions = db.relationship('Session', backref='time_slot', lazy=True)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'dayOfWeek': self.day_of_week,
+            'slotNumber': self.slot_number,
+            'courseId': self.course_id,
+            'courseName': self.course.course_name if self.course else None,
+            'professorName': self.course.professor_name if self.course else None,
+            'startTime': self.start_time,
+            'endTime': self.end_time,
+            'lateThresholdMinutes': self.late_threshold_minutes,
+            'isActive': self.is_active
+        }
+
+
+class Session(db.Model):
+    """Class sessions (auto-generated or manual)"""
+    __tablename__ = 'sessions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
+    time_slot_id = db.Column(db.Integer, db.ForeignKey('time_slots.id'), nullable=True)  # Nullable for manual sessions
+    starts_at = db.Column(db.DateTime, nullable=False)
+    ends_at = db.Column(db.DateTime, nullable=False)
+    late_threshold_minutes = db.Column(db.Integer, default=5)
+    status = db.Column(db.String(20), default='ACTIVE')  # SCHEDULED, ACTIVE, COMPLETED, CANCELLED
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    auto_created = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    attendance_records = db.relationship('Attendance', backref='session', lazy=True, cascade='all, delete-orphan')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'courseId': self.course_id,
+            'courseName': self.course.course_name if self.course else None,
+            'professorName': self.course.professor_name if self.course else None,
+            'timeSlotId': self.time_slot_id,
+            'startsAt': self.starts_at.isoformat(),
+            'endsAt': self.ends_at.isoformat(),
+            'lateThresholdMinutes': self.late_threshold_minutes,
+            'status': self.status,
+            'autoCreated': self.auto_created,
+            'createdAt': self.created_at.isoformat()
+        }
+
+
+class StudentEmbedding(db.Model):
+    """Multiple face embeddings per student for better accuracy"""
+    __tablename__ = 'student_embeddings'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    embedding = db.Column(db.LargeBinary, nullable=False)  # Serialized numpy array
+    quality_score = db.Column(db.Float)  # Quality metric for this sample
+    sample_image_path = db.Column(db.String(255))  # Optional reference image
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'studentId': self.student_id,
+            'qualityScore': self.quality_score,
+            'sampleImagePath': self.sample_image_path,
+            'createdAt': self.created_at.isoformat()
+        }
+
 
 
 def init_db(app):
@@ -124,7 +266,7 @@ def init_db(app):
                 db.session.add(setting)
         
         db.session.commit()
-        print("✓ Database initialized successfully")
+        print("Database initialized successfully")
 
 
 # CRUD Operations
@@ -252,3 +394,22 @@ def update_setting(key, value):
     
     db.session.commit()
     return setting
+
+
+# Import helper functions from sibling module (works when running from backend/)
+from db_helpers import (
+    # Course management
+    get_all_courses, get_course_by_id, get_course_by_course_id,
+    create_course, update_course, delete_course,
+    # TimeSlot management  
+    get_all_time_slots, get_time_slot_by_day_slot,
+    create_or_update_time_slot, delete_time_slot, get_active_slots_for_day,
+    # Session management
+    create_session, get_session_by_id, get_active_session,
+    get_sessions_by_date, update_session_status, get_attendance_by_session,
+    # StudentEmbedding management
+    create_student_embedding, get_student_all_embeddings,
+    get_all_students_with_embeddings, delete_student_embedding,
+    # Updated attendance functions
+    upsert_attendance, mark_students_absent
+)
