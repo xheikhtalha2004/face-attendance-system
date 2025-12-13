@@ -11,27 +11,14 @@ from typing import Optional, List, Tuple
 class FaceAligner:
     """Face alignment using facial landmarks"""
     
-    def __init__(self, method='dlib'):
+    def __init__(self, method='simple'):
         """
         Initialize face aligner
         
         Args:
-            method: 'dlib' or 'mediapipe' for landmark detection
+            method: 'simple' for geometric alignment (dlib not required on Windows)
         """
-        self.method = method
-        self.predictor = None
-        
-        if method == 'dlib':
-            try:
-                import dlib
-                # Load dlib's face landmark predictor
-                # Note: This requires shape_predictor_68_face_landmarks.dat file
-                # Download from: http://dlib.net/files/shape_predictor_68_face_landmarks.dat.bz2
-                self.predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
-                self.detector = dlib.get_frontal_face_detector()
-            except Exception as e:
-                print(f"Warning: Could not load dlib predictor: {e}")
-                self.method = 'simple'
+        self.method = 'simple'  # Always use simple method to avoid dlib Windows issues
     
     def get_facial_landmarks(self, image: np.ndarray, face_location: Tuple[int, int, int, int]) -> Optional[np.ndarray]:
         """
