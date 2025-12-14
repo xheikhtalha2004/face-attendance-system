@@ -35,6 +35,9 @@ cd backend
 # Install dependencies
 pip install -r requirements.txt
 
+# Windows only: install C++ build tools (required for InsightFace build)
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --source winget --accept-package-agreements --accept-source-agreements --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet --norestart"
+
 # Create .env file
 cp .env.example .env
 
@@ -51,6 +54,8 @@ python app.py
 ```
 
 Server runs at: `http://localhost:5000`
+
+> InsightFace install notes: We successfully built `insightface==0.7.3` on Windows 11 with the Visual Studio Build Tools C++ workload installed via `winget` (command above) and the pinned versions in `backend/requirements.txt` (notably `numpy==1.26.4`, `opencv-python-headless==4.8.1.78`, `scikit-learn==1.3.2`). See `INSIGHTFACE_INSTALL.md` for the full recipe and troubleshooting tips.
 
 #### 2. Frontend Setup
 

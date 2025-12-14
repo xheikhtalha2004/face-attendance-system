@@ -1,37 +1,43 @@
-# InsightFace Installation Instructions for Windows
+# InsightFace Installation (Windows, confirmed working)
 
-## Problem
-InsightFace requires compilation which fails on Windows without Visual Studio C++ build tools.
+These steps are the exact recipe used to install `insightface==0.7.3` on Windows 11 (Python 3.11) in the root `venv`.
 
-## Solution Options
-
-### Option 1: Install Pre-built Wheel (Recommended)
-Download pre-built wheel from: https://github.com/deepinsight/insightface/releases
-
-Or use this pip command:
-```bash
-venv\Scripts\python.exe -m pip install insightface-0.7.3-cp311-cp311-win_amd64.whl
+## 1) Install C++ build tools (required)
+Use Winget to add the Visual Studio 2022 Build Tools with the VC++ workload:
+```powershell
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e --source winget ^
+  --accept-package-agreements --accept-source-agreements ^
+  --override "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --quiet --norestart"
 ```
 
-### Option 2: Install Build Tools
-1. Install Visual Studio 2022 Build Tools
-2. Select "Desktop development with C++"
-3. Then: `venv\Scripts\pip install insightface`
-
-### Option 3: Use Docker (Production)
-```dockerfile
-FROM python:3.11-slim
-RUN pip install insightface
+## 2) Activate venv and upgrade pip
+```powershell
+.\venv\Scripts\activate
+python -m pip install --upgrade pip
 ```
 
-### Option 4: Test Without InsightFace
-The backend will run in "test mode" without face recognition.
-You can test all other endpoints (registration, enrollment, etc.)
+## 3) Install InsightFace with pinned deps
+We compiled from source (no prebuilt wheel for cp311 on Windows was available). The following set works together and keeps pandas happy:
+```powershell
+python -m pip install insightface==0.7.3
+python -m pip install --force-reinstall numpy==1.26.4
+python -m pip install --force-reinstall scikit-learn==1.3.2 --no-deps
+python -m pip install --force-reinstall opencv-python-headless==4.8.1.78 --no-deps
+python -m pip install onnx==1.20.0
+```
 
-## Current Status
-Backend is fully implemented but face recognition endpoint will return mock data until InsightFace is installed.
+> Shortcut: `pip install -r backend/requirements.txt` now pins these versions.
 
-## Next Steps
-1. Try Option 1 (pre-built wheel)
-2. If that fails, use Option 4 (test mode) for now
-3. Recognition will work once InsightFace is successfully installed
+## 4) Verify
+```powershell
+python - <<'PY'
+import insightface
+print("insightface version:", insightface.__version__)
+PY
+```
+Expected: `insightface version: 0.7.3`
+
+## Notes
+- This installs models at first run (~500MB) under `~/.insightface/models/`.
+- If you see numpy/pandas/opencv conflicts, re-run the pinned commands above.
+- For production containers, you can still use: `FROM python:3.11-slim` + `pip install insightface`.
