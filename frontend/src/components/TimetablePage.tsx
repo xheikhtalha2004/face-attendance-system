@@ -4,8 +4,7 @@
  */
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 interface Course {
   id: number;
@@ -57,10 +56,7 @@ export const TimetablePage: React.FC = () => {
 
   const fetchTimetable = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/timetable`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await axios.get(`${API_BASE_URL}/timetable`);
       setTimetable(response.data);
     } catch (error) {
       console.error('Error fetching timetable:', error);
@@ -71,10 +67,7 @@ export const TimetablePage: React.FC = () => {
 
   const fetchCourses = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get(`${API_URL}/api/courses`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await axios.get(`${API_BASE_URL}/courses`);
       setCourses(response.data);
     } catch (error) {
       console.error('Error fetching courses:', error);
@@ -91,11 +84,10 @@ export const TimetablePage: React.FC = () => {
     if (!editingSlot || selectedCourse === null) return;
 
     try {
-      const token = localStorage.getItem('token');
       const slotTime = SLOT_TIMES[editingSlot.slot as keyof typeof SLOT_TIMES];
 
       await axios.post(
-        `${API_URL}/api/timetable/slots`,
+        `${API_BASE_URL}/timetable/slots`,
         {
           dayOfWeek: editingSlot.day,
           slotNumber: editingSlot.slot,
@@ -103,8 +95,7 @@ export const TimetablePage: React.FC = () => {
           startTime: slotTime.start,
           endTime: slotTime.end,
           lateThresholdMinutes: 5
-        },
-        { headers: { Authorization: `Bearer ${token}` } }
+        }
       );
 
       // Refresh timetable
@@ -121,10 +112,7 @@ export const TimetablePage: React.FC = () => {
     if (!confirm('Remove this course from the timetable?')) return;
 
     try {
-      const token = localStorage.getItem('token');
-      await axios.delete(`${API_URL}/api/timetable/slots/${slotId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await axios.delete(`${API_BASE_URL}/timetable/slots/${slotId}`);
       await fetchTimetable();
     } catch (error) {
       console.error('Error deleting slot:', error);

@@ -34,6 +34,8 @@ const StudentRegistry: React.FC = () => {
       }
     } catch (err) {
       console.error("Camera init failed", err);
+      alert("Camera access failed. Please check permissions and try again. For HTTPS sites, camera requires secure connection.");
+      setIsCameraOpen(false);
     }
   };
 

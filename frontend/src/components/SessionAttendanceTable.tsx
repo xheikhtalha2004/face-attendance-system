@@ -4,8 +4,8 @@
  */
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { Download, FileText } from 'lucide-react';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 interface AttendanceRecord {
     id: string;
@@ -54,10 +54,7 @@ export const SessionAttendanceTable: React.FC<SessionAttendanceProps> = ({
 
     const fetchActiveSession = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/api/sessions/active`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.get(`${API_BASE_URL}/sessions/active`);
 
             if (response.data.active) {
                 setActiveSessionId(response.data.session.id);
@@ -75,10 +72,8 @@ export const SessionAttendanceTable: React.FC<SessionAttendanceProps> = ({
         if (!activeSessionId) return;
 
         try {
-            const token = localStorage.getItem('token');
             const response = await axios.get(
-                `${API_URL}/api/sessions/${activeSessionId}/attendance`,
-                { headers: { Authorization: `Bearer ${token}` } }
+                `${API_BASE_URL}/sessions/${activeSessionId}/attendance`
             );
 
             setAttendance(response.data);
@@ -112,6 +107,30 @@ export const SessionAttendanceTable: React.FC<SessionAttendanceProps> = ({
         }
     };
 
+    const handleExport = async (format: 'csv' | 'excel') => {
+        if (!activeSessionId) return;
+
+        try {
+            const response = await axios.get(
+                `${API_BASE_URL}/sessions/${activeSessionId}/export?format=${format}`,
+                { responseType: 'blob' }
+            );
+
+            // Create download link
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `attendance_session_${activeSessionId}.${format === 'csv' ? 'csv' : 'xlsx'}`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Error exporting attendance:', error);
+            alert('Failed to export attendance data. Please try again.');
+        }
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center p-8">
@@ -138,13 +157,35 @@ export const SessionAttendanceTable: React.FC<SessionAttendanceProps> = ({
             {/* Session Header */}
             {sessionInfo && (
                 <div className="p-4 border-b bg-blue-50">
-                    <h2 className="text-xl font-bold text-blue-900">
-                        {sessionInfo.courseName}
-                    </h2>
-                    <p className="text-sm text-blue-700">
-                        Professor: {sessionInfo.professorName} |
-                        Started: {formatTime(sessionInfo.startsAt)}
-                    </p>
+                    <div className="flex justify-between items-start">
+                        <div>
+                            <h2 className="text-xl font-bold text-blue-900">
+                                {sessionInfo.courseName}
+                            </h2>
+                            <p className="text-sm text-blue-700">
+                                Professor: {sessionInfo.professorName} |
+                                Started: {formatTime(sessionInfo.startsAt)}
+                            </p>
+                        </div>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handleExport('csv')}
+                                className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+                                title="Export to CSV"
+                            >
+                                <FileText className="w-4 h-4" />
+                                CSV
+                            </button>
+                            <button
+                                onClick={() => handleExport('excel')}
+                                className="flex items-center gap-2 bg-white border border-gray-300 text-gray-700 px-3 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+                                title="Export to Excel"
+                            >
+                                <Download className="w-4 h-4" />
+                                Excel
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 

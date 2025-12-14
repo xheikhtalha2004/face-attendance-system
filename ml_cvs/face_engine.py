@@ -19,22 +19,28 @@ class FaceEngine:
     Uses RetinaFace for detection and ArcFace for embeddings
     """
     
-    def __init__(self, model_name=INSIGHTFACE_MODEL, ctx_id=-1):
+    def __init__(self, model_name='buffalo_l', ctx_id=-1):
         """
-        Initialize InsightFace app
-        
+        Initialize InsightFace model (works with 0.2.1 API)
         Args:
-            model_name: Model to use ('buffalo_l' or 'buffalo_sc')
-            ctx_id: -1 for CPU, 0 for GPU (CUDA device 0)
+            model_name: Model to use ('buffalo_l' is default, high accuracy)
+            ctx_id: Device ID (-1 for CPU, 0+ for GPU)
         """
         self.model_name = model_name
         self.ctx_id = ctx_id
         
         print(f"Initializing InsightFace with model: {model_name}...")
         
-        # Initialize FaceAnalysis app (bundles RetinaFace + ArcFace)
-        self.app = FaceAnalysis(name=model_name)
-        self.app.prepare(ctx_id=ctx_id, det_size=(640, 640))
+        try:
+            # Initialize FaceAnalysis (0.2.1 API)
+            self.app = FaceAnalysis(name=model_name)
+            self.app.prepare(ctx_id=ctx_id, det_size=(640, 640))
+            
+            print(f"✓ InsightFace initialized ({model_name})")
+            print(f"✓ Using {'GPU' if ctx_id >= 0 else 'CPU'}")
+        except Exception as e:
+            print(f"Error initializing InsightFace: {str(e)}")
+            raise
         
         print("✓ InsightFace initialized successfully")
     

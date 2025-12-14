@@ -8,9 +8,9 @@ interface HomeProps {
 const Home: React.FC<HomeProps> = ({ onNavigate }) => {
   const widgets = [
     {
-      id: 'live',
-      title: 'Live Attendance',
-      description: 'Real-time face recognition and automated logging via webcam.',
+      id: 'recognition',
+      title: 'Face Recognition',
+      description: 'Real-time detection and verification with attendance updates.',
       icon: MonitorPlay,
       image: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?q=80&w=2070&auto=format&fit=crop', // Data/Security tech
       color: 'from-blue-600 to-indigo-600'

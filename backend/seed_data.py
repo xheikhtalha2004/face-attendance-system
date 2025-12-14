@@ -7,26 +7,13 @@ from db import db
 
 def seed_database():
     """Seed database with sample courses and timetable"""
-    
+
     with app.app_context():
         # Import inside context
-        from db import create_course, create_or_update_time_slot, User, Course
-        from werkzeug.security import generate_password_hash
-        
+        from db import create_course, create_or_update_time_slot, Course
+
         print("Starting database seeding...")
-        
-        # Create default admin user if not exists
-        admin = User.query.filter_by(email='admin@university.edu').first()
-        if not admin:
-            admin = User(
-                email='admin@university.edu',
-                password_hash=generate_password_hash('admin123'),
-                name='System Administrator'
-            )
-            db.session.add(admin)
-            db.session.commit()
-            print("✓ Created admin user (email: admin@university.edu, password: admin123)")
-        
+
         # Define courses with Muslim teachers
         courses_data = [
             {
@@ -70,6 +57,24 @@ def seed_database():
                 'course_name': 'Introduction to Programming',
                 'professor_name': 'Prof. Ibrahim Yousaf',
                 'description': 'Programming fundamentals using Python'
+            },
+            {
+                'course_id': 'CS501',
+                'course_name': 'Information Security',
+                'professor_name': 'Dr. Omar Hassan',
+                'description': 'Principles of cybersecurity, cryptography, and secure systems'
+            },
+            {
+                'course_id': 'CS204',
+                'course_name': 'Operating Systems',
+                'professor_name': 'Prof. Layla Mahmoud',
+                'description': 'Process management, memory management, and file systems'
+            },
+            {
+                'course_id': 'CS205',
+                'course_name': 'Computer Networks',
+                'professor_name': 'Dr. Khalid Rahman',
+                'description': 'Network protocols, TCP/IP, and network security'
             }
         ]
         
@@ -82,7 +87,7 @@ def seed_database():
             if not existing:
                 course = create_course(**course_data)
                 created_courses[course_data['course_id']] = course
-                print(f"✓ Created course: {course_data['course_name']} ({course_data['professor_name']})")
+                print(f"+ Created course: {course_data['course_name']} ({course_data['professor_name']})")
             else:
                 created_courses[course_data['course_id']] = existing
                 print(f"  Course already exists: {course_data['course_name']}")
@@ -91,28 +96,34 @@ def seed_database():
         # Slot times: 1(08:30-09:50), 2(09:50-11:10), 3(11:10-12:30), BREAK, 4(13:30-14:50), 5(14:50-16:10)
         timetable = [
             # Monday
-            {'day': 'MONDAY', 'slot': 1, 'course': 'CS301', 'start': '08:30', 'end': '09:50'},
-            {'day': 'MONDAY', 'slot': 2, 'course': 'CS201', 'start': '09:50', 'end': '11:10'},
-            {'day': 'MONDAY', 'slot': 4, 'course': 'CS203', 'start': '13:30', 'end': '14:50'},
-            
+            {'day': 'MONDAY', 'slot': 1, 'course': 'CS301', 'start': '08:30', 'end': '09:50', 'room': 'CS-101'},
+            {'day': 'MONDAY', 'slot': 2, 'course': 'CS201', 'start': '09:50', 'end': '11:10', 'room': 'CS-102'},
+            {'day': 'MONDAY', 'slot': 4, 'course': 'CS203', 'start': '13:30', 'end': '14:50', 'room': 'CS-103'},
+            {'day': 'MONDAY', 'slot': 5, 'course': 'CS501', 'start': '14:50', 'end': '16:10', 'room': 'CS-104'},
+
             # Tuesday
-            {'day': 'TUESDAY', 'slot': 1, 'course': 'CS202', 'start': '08:30', 'end': '09:50'},
-            {'day': 'TUESDAY', 'slot': 3, 'course': 'CS401', 'start': '11:10', 'end': '12:30'},
-            {'day': 'TUESDAY', 'slot': 5, 'course': 'CS302', 'start': '14:50', 'end': '16:10'},
-            
+            {'day': 'TUESDAY', 'slot': 1, 'course': 'CS202', 'start': '08:30', 'end': '09:50', 'room': 'CS-105'},
+            {'day': 'TUESDAY', 'slot': 2, 'course': 'CS204', 'start': '09:50', 'end': '11:10', 'room': 'CS-101'},
+            {'day': 'TUESDAY', 'slot': 3, 'course': 'CS401', 'start': '11:10', 'end': '12:30', 'room': 'CS-102'},
+            {'day': 'TUESDAY', 'slot': 5, 'course': 'CS302', 'start': '14:50', 'end': '16:10', 'room': 'CS-103'},
+
             # Wednesday
-            {'day': 'WEDNESDAY', 'slot': 2, 'course': 'CS301', 'start': '09:50', 'end': '11:10'},
-            {'day': 'WEDNESDAY', 'slot': 3, 'course': 'CS101', 'start': '11:10', 'end': '12:30'},
-            {'day': 'WEDNESDAY', 'slot': 4, 'course': 'CS203', 'start': '13:30', 'end': '14:50'},
-            
+            {'day': 'WEDNESDAY', 'slot': 1, 'course': 'CS205', 'start': '08:30', 'end': '09:50', 'room': 'CS-104'},
+            {'day': 'WEDNESDAY', 'slot': 2, 'course': 'CS301', 'start': '09:50', 'end': '11:10', 'room': 'CS-105'},
+            {'day': 'WEDNESDAY', 'slot': 3, 'course': 'CS101', 'start': '11:10', 'end': '12:30', 'room': 'CS-101'},
+            {'day': 'WEDNESDAY', 'slot': 4, 'course': 'CS203', 'start': '13:30', 'end': '14:50', 'room': 'CS-102'},
+
             # Thursday
-            {'day': 'THURSDAY', 'slot': 1, 'course': 'CS201', 'start': '08:30', 'end': '09:50'},
-            {'day': 'THURSDAY', 'slot': 2, 'course': 'CS202', 'start': '09:50', 'end': '11:10'},
-            {'day': 'THURSDAY', 'slot': 5, 'course': 'CS401', 'start': '14:50', 'end': '16:10'},
-            
+            {'day': 'THURSDAY', 'slot': 1, 'course': 'CS201', 'start': '08:30', 'end': '09:50', 'room': 'CS-103'},
+            {'day': 'THURSDAY', 'slot': 2, 'course': 'CS202', 'start': '09:50', 'end': '11:10', 'room': 'CS-104'},
+            {'day': 'THURSDAY', 'slot': 4, 'course': 'CS501', 'start': '13:30', 'end': '14:50', 'room': 'CS-105'},
+            {'day': 'THURSDAY', 'slot': 5, 'course': 'CS401', 'start': '14:50', 'end': '16:10', 'room': 'CS-101'},
+
             # Friday
-            {'day': 'FRIDAY', 'slot': 1, 'course': 'CS302', 'start': '08:30', 'end': '09:50'},
-            {'day': 'FRIDAY', 'slot': 3, 'course': 'CS101', 'start': '11:10', 'end': '12:30'},
+            {'day': 'FRIDAY', 'slot': 1, 'course': 'CS302', 'start': '08:30', 'end': '09:50', 'room': 'CS-102'},
+            {'day': 'FRIDAY', 'slot': 2, 'course': 'CS204', 'start': '09:50', 'end': '11:10', 'room': 'CS-103'},
+            {'day': 'FRIDAY', 'slot': 3, 'course': 'CS101', 'start': '11:10', 'end': '12:30', 'room': 'CS-104'},
+            {'day': 'FRIDAY', 'slot': 4, 'course': 'CS205', 'start': '13:30', 'end': '14:50', 'room': 'CS-105'},
         ]
         
         # Create time slots
@@ -125,16 +136,14 @@ def seed_database():
                     course_id=course.id,
                     start_time=slot_data['start'],
                     end_time=slot_data['end'],
+                    room=slot_data.get('room'),
                     late_threshold_minutes=5
                 )
-                print(f"✓ Assigned {slot_data['day']} Slot {slot_data['slot']}: {course.course_name}")
+                print(f"+ Assigned {slot_data['day']} Slot {slot_data['slot']}: {course.course_name} in {slot_data.get('room', 'N/A')}")
         
-        print("\n✅ Database seeding completed successfully!")
+        print("\n+ Database seeding completed successfully!")
         print(f"Total courses created/verified: {len(created_courses)}")
         print(f"Total time slots assigned: {len(timetable)}")
-        print("\nAdmin Login Credentials:")
-        print("  Email: admin@university.edu")
-        print("  Password: admin123")
 
 
 if __name__ == '__main__':

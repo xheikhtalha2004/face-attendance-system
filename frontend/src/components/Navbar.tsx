@@ -1,6 +1,5 @@
 import React from 'react';
-import { LogOut, Home, Settings } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { Home, Settings } from 'lucide-react';
 
 interface NavbarProps {
   onNavigate: (view: string) => void;
@@ -8,7 +7,6 @@ interface NavbarProps {
 }
 
 const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
-  const { user, logout } = useAuth();
 
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
@@ -55,6 +53,13 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
                 👥 Students
               </button>
               <button
+                onClick={() => onNavigate('registration')}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'registration' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+              >
+                📝 Register
+              </button>
+              <button
                 onClick={() => onNavigate('timetable')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'timetable' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
@@ -92,20 +97,6 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
             </button>
 
             <div className="h-6 w-px bg-gray-200 mx-1"></div>
-
-            <div className="flex items-center gap-3">
-              <div className="text-right hidden sm:block">
-                <p className="text-sm font-medium text-gray-900">{user?.name || 'Admin'}</p>
-                <p className="text-xs text-gray-500">{user?.email || 'University Admin'}</p>
-              </div>
-              <button
-                onClick={logout}
-                className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                title="Logout"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
-            </div>
           </div>
         </div>
       </div>

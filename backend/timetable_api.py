@@ -2,9 +2,10 @@
 Session and Timetable Management API Endpoints
 Handles course management, timetable scheduling, and session creation
 """
-from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required
+from flask import Blueprint, request, jsonify, send_file
 from datetime import datetime, timedelta
+import pandas as pd
+import io
 
 # Import DB functions
 from db import (
@@ -31,7 +32,6 @@ timetable_bp = Blueprint('timetable', __name__, url_prefix='/api')
 # ============================================================================
 
 @timetable_bp.route('/courses', methods=['GET'])
-@jwt_required()
 def get_courses():
     """Get all courses"""
     try:
@@ -42,7 +42,6 @@ def get_courses():
 
 
 @timetable_bp.route('/courses', methods=['POST'])
-@jwt_required()
 def create_course_endpoint():
     """Create new course"""
     try:
@@ -73,7 +72,6 @@ def create_course_endpoint():
 
 
 @timetable_bp.route('/courses/<int:course_id>', methods=['PUT'])
-@jwt_required()
 def update_course_endpoint(course_id):
     """Update course"""
     try:
@@ -94,7 +92,6 @@ def update_course_endpoint(course_id):
 
 
 @timetable_bp.route('/courses/<int:course_id>', methods=['DELETE'])
-@jwt_required()
 def delete_course_endpoint(course_id):
     """Delete course"""
     try:
@@ -114,7 +111,6 @@ def delete_course_endpoint(course_id):
 # ============================================================================
 
 @timetable_bp.route('/timetable', methods=['GET'])
-@jwt_required()
 def get_timetable():
     """Get entire weekly timetable"""
     try:
@@ -141,7 +137,6 @@ def get_timetable():
 
 
 @timetable_bp.route('/timetable/slots', methods=['POST'])
-@jwt_required()
 def create_update_time_slot():
     """Create or update time slot"""
     try:
@@ -176,7 +171,6 @@ def create_update_time_slot():
 
 
 @timetable_bp.route('/timetable/slots/<int:slot_id>', methods=['DELETE'])
-@jwt_required()
 def delete_time_slot_endpoint(slot_id):
     """Delete time slot"""
     try:
@@ -196,34 +190,26 @@ def delete_time_slot_endpoint(slot_id):
 # ============================================================================
 
 @timetable_bp.route('/sessions', methods=['POST'])
-@jwt_required()
 def create_session_endpoint():
     """Create new session (manual)"""
     try:
-        from flask_jwt_extended import get_jwt_identity
-        
         data = request.get_json()
-        
+
         course_id = data.get('courseId')
         starts_at = datetime.fromisoformat(data.get('startsAt'))
         ends_at = datetime.fromisoformat(data.get('endsAt'))
         late_threshold_minutes = data.get('lateThresholdMinutes', 5)
-        
+
         if not all([course_id, starts_at, ends_at]):
             return jsonify({'error': 'Missing required fields'}), 400
-        
-        # Get current user ID
-        current_user_email = get_jwt_identity()
-        from db import User
-        user = User.query.filter_by(email=current_user_email).first()
-        
+
         session = create_session(
             course_id=course_id,
             starts_at=starts_at,
             ends_at=ends_at,
             late_threshold_minutes=late_threshold_minutes,
             auto_created=False,
-            created_by=user.id if user else None
+            created_by=None
         )
         
         return jsonify({
@@ -236,7 +222,6 @@ def create_session_endpoint():
 
 
 @timetable_bp.route('/sessions/<int:session_id>', methods=['GET'])
-@jwt_required()
 def get_session(session_id):
     """Get session details"""
     try:
@@ -251,27 +236,43 @@ def get_session(session_id):
         return jsonify({'error': str(e)}), 500
 
 
+@timetable_bp.route('/sessions', methods=['GET'])
+def get_sessions():
+    """Get all sessions with optional date filter"""
+    try:
+        date_filter = request.args.get('date')
+        if date_filter:
+            sessions = get_sessions_by_date(datetime.fromisoformat(date_filter))
+        else:
+            # Get all sessions (you might want to limit this in production)
+            from db import Session
+            sessions = Session.query.order_by(Session.starts_at.desc()).limit(100).all()
+
+        return jsonify([s.to_dict() for s in sessions]), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @timetable_bp.route('/sessions/active', methods=['GET'])
-@jwt_required()
 def get_active_session_endpoint():
     """Get currently active session"""
     try:
         session = get_active_session()
-        
+
         if not session:
             return jsonify({'active': False}), 200
-        
+
         return jsonify({
             'active': True,
             'session': session.to_dict()
         }), 200
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 @timetable_bp.route('/sessions/<int:session_id>/attendance', methods=['GET'])
-@jwt_required()
 def get_session_attendance(session_id):
     """Get all attendance records for a session"""
     try:
@@ -284,7 +285,6 @@ def get_session_attendance(session_id):
 
 
 @timetable_bp.route('/sessions/<int:session_id>/status', methods=['PUT'])
-@jwt_required()
 def update_session_status_endpoint(session_id):
     """Update session status"""
     try:
@@ -309,32 +309,94 @@ def update_session_status_endpoint(session_id):
 
 
 @timetable_bp.route('/sessions/<int:session_id>/mark-absentees', methods=['POST'])
-@jwt_required()
 def mark_absentees_endpoint(session_id):
     """Mark all students without attendance as absent"""
     try:
         session = get_session_by_id(session_id)
         if not session:
             return jsonify({'error': 'Session not found'}), 404
-        
+
         # Get all active students
         all_students = get_all_students()
         all_student_ids = [s.id for s in all_students if s.status == 'Active']
-        
+
         # Get students already marked
         attendance_records = get_attendance_by_session(session_id)
         marked_student_ids = set(a.student_id_fk for a in attendance_records)
-        
+
         # Find absent students
         absent_student_ids = [sid for sid in all_student_ids if sid not in marked_student_ids]
-        
+
         # Mark them absent
         marked = mark_students_absent(session_id, absent_student_ids)
-        
+
         return jsonify({
             'message': f'Marked {len(marked)} students as absent',
             'count': len(marked)
         }), 200
-        
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@timetable_bp.route('/sessions/<int:session_id>/export', methods=['GET'])
+def export_session_attendance(session_id):
+    """Export session attendance to CSV or Excel"""
+    try:
+        format_type = request.args.get('format', 'csv').lower()
+        if format_type not in ['csv', 'excel']:
+            return jsonify({'error': 'Invalid format. Use csv or excel'}), 400
+
+        session = get_session_by_id(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+
+        attendance_records = get_attendance_by_session(session_id)
+
+        # Prepare data for export
+        data = []
+        for record in attendance_records:
+            student = record.student
+            data.append({
+                'Student Name': student.name if student else 'Unknown',
+                'Roll Number': student.student_id if student else 'Unknown',
+                'Attendance Status': record.status,
+                'Check-in Time': record.check_in_time.strftime('%Y-%m-%d %H:%M:%S') if record.check_in_time else 'N/A',
+                'Last Seen Time': record.last_seen_time.strftime('%Y-%m-%d %H:%M:%S') if record.last_seen_time else 'N/A',
+                'Confidence': f"{record.confidence:.2f}" if record.confidence else 'N/A',
+                'Course Name': session.course.course_name if session.course else 'Unknown',
+                'Professor Name': session.course.professor_name if session.course else 'Unknown',
+                'Session Date': session.starts_at.strftime('%Y-%m-%d'),
+                'Session Time': f"{session.starts_at.strftime('%H:%M')} - {session.ends_at.strftime('%H:%M')}"
+            })
+
+        if not data:
+            return jsonify({'error': 'No attendance records found for this session'}), 404
+
+        df = pd.DataFrame(data)
+
+        # Create file in memory
+        output = io.BytesIO()
+
+        if format_type == 'csv':
+            df.to_csv(output, index=False)
+            output.seek(0)
+            return send_file(
+                output,
+                mimetype='text/csv',
+                as_attachment=True,
+                download_name=f'attendance_session_{session_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+            )
+        else:  # excel
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name='Attendance', index=False)
+            output.seek(0)
+            return send_file(
+                output,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f'attendance_session_{session_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx'
+            )
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500

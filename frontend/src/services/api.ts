@@ -3,15 +3,14 @@
  * Handles all HTTP requests to backend
  */
 import axios, { AxiosInstance, AxiosError } from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+import { API_BASE_URL, getAuthToken } from '../utils/apiConfig';
 
 class APIService {
     private client: AxiosInstance;
 
     constructor() {
         this.client = axios.create({
-            baseURL: API_URL,
+            baseURL: API_BASE_URL,
             headers: {
                 'Content-Type': 'application/json',
             },
@@ -20,7 +19,7 @@ class APIService {
         // Request interceptor - add JWT token
         this.client.interceptors.request.use(
             (config) => {
-                const token = localStorage.getItem('access_token');
+                const token = getAuthToken();
                 if (token) {
                     config.headers.Authorization = `Bearer ${token}`;
                 }
@@ -35,7 +34,7 @@ class APIService {
             (error: AxiosError) => {
                 if (error.response?.status === 401) {
                     // Unauthorized - clear token and redirect to login
-                    localStorage.removeItem('access_token');
+                    localStorage.removeItem('token');
                     localStorage.removeItem('user');
                     window.location.href = '/';
                 }

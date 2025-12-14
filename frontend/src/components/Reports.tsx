@@ -1,16 +1,70 @@
-import React, { useState } from 'react';
-import { Download, Calendar, FileText } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Download, Calendar, FileText, BookOpen } from 'lucide-react';
+import axios from 'axios';
+import { API_BASE_URL } from '../utils/apiConfig';
 import { useApp } from '../context/AppContext';
+
+interface Session {
+  id: number;
+  courseName: string;
+  professorName: string;
+  startsAt: string;
+  endsAt: string;
+  status: string;
+}
 
 const Reports: React.FC = () => {
   const { attendance } = useApp();
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [selectedSession, setSelectedSession] = useState<number | null>(null);
+  const [reportType, setReportType] = useState<'daily' | 'session'>('daily');
 
-  // Filter attendance based on the selected date
-  // Note: MOCK_ATTENDANCE dates might need to be adjusted in constants to match "today" for testing
-  const filteredAttendance = attendance.filter(record => 
+  const filteredAttendance = attendance.filter(record =>
     new Date(record.timestamp).toISOString().split('T')[0] === dateFilter
   );
+
+  useEffect(() => {
+    if (reportType === 'session') {
+      fetchSessions();
+    }
+  }, [reportType]);
+
+  const fetchSessions = async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/sessions`);
+      // Filter to get sessions for the selected date
+      const dateSessions = response.data.filter((session: Session) =>
+        new Date(session.startsAt).toISOString().split('T')[0] === dateFilter
+      );
+      setSessions(dateSessions);
+    } catch (error) {
+      console.error('Error fetching sessions:', error);
+    }
+  };
+
+  const handleSessionExport = async (format: 'csv' | 'excel') => {
+    if (!selectedSession) return;
+
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/sessions/${selectedSession}/export?format=${format}`,
+        { responseType: 'blob' }
+      );
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `attendance_session_${selectedSession}.${format === 'csv' ? 'csv' : 'xlsx'}`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error exporting session attendance:', error);
+      alert('Failed to export session attendance. Please try again.');
+    }
+  };
 
   const handleExportCSV = () => {
     // Generate CSV content
@@ -41,27 +95,104 @@ const Reports: React.FC = () => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Attendance Reports</h1>
-          <p className="text-gray-500 text-sm">View and export daily attendance logs.</p>
+          <p className="text-gray-500 text-sm">View and export attendance logs by date or session.</p>
         </div>
         <div className="flex gap-3 w-full sm:w-auto">
           <div className="relative">
             <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input 
-              type="date" 
+            <input
+              type="date"
               className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
             />
           </div>
-          <button 
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
+          {reportType === 'daily' && (
+            <button
+              onClick={handleExportCSV}
+              className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+            >
+              <Download className="w-4 h-4" />
+              Export CSV
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Report Type Selector */}
+      <div className="flex gap-4">
+        <button
+          onClick={() => setReportType('daily')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
+            reportType === 'daily'
+              ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+              : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <Calendar className="w-4 h-4" />
+          Daily Report
+        </button>
+        <button
+          onClick={() => setReportType('session')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition ${
+            reportType === 'session'
+              ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+              : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          Session Report
+        </button>
+      </div>
+
+      {/* Session Selection */}
+      {reportType === 'session' && (
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Select Session</h3>
+          {sessions.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {sessions.map((session) => (
+                <div
+                  key={session.id}
+                  onClick={() => setSelectedSession(session.id)}
+                  className={`p-3 border rounded-lg cursor-pointer transition ${
+                    selectedSession === session.id
+                      ? 'border-indigo-300 bg-indigo-50'
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <h4 className="font-medium text-gray-900">{session.courseName}</h4>
+                  <p className="text-sm text-gray-600">Professor: {session.professorName}</p>
+                  <p className="text-sm text-gray-500">
+                    {new Date(session.startsAt).toLocaleTimeString()} - {new Date(session.endsAt).toLocaleTimeString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-500">No sessions found for the selected date.</p>
+          )}
+
+          {selectedSession && (
+            <div className="mt-4 flex gap-2">
+              <button
+                onClick={() => handleSessionExport('csv')}
+                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+              >
+                <FileText className="w-4 h-4" />
+                Export CSV
+              </button>
+              <button
+                onClick={() => handleSessionExport('excel')}
+                className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
+              >
+                <Download className="w-4 h-4" />
+                Export Excel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="overflow-x-auto">

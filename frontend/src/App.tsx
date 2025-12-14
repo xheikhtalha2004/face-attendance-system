@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar';
 import Dashboard from './components/Dashboard';
-import LiveAttendance from './components/LiveAttendance';
 import StudentRegistry from './components/StudentRegistry';
 import Reports from './components/Reports';
 import Home from './components/Home';
@@ -9,9 +8,8 @@ import Settings from './components/Settings';
 import { TimetablePage } from './components/TimetablePage';
 import EnhancedRecognition from './components/EnhancedRecognition';
 import { SessionAttendanceTable } from './components/SessionAttendanceTable';
+import { StudentRegistrationForm } from './components/StudentRegistrationForm';
 import { AppProvider } from './context/AppContext';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import LoginPage from './components/LoginPage';
 
 const MainLayout: React.FC = () => {
   const [currentView, setCurrentView] = useState('home');
@@ -20,7 +18,7 @@ const MainLayout: React.FC = () => {
     switch (currentView) {
       case 'home': return <Home onNavigate={setCurrentView} />;
       case 'dashboard': return <Dashboard />;
-      case 'live': return <LiveAttendance />;
+      case 'registration': return <StudentRegistrationForm />;
       case 'recognition': return <EnhancedRecognition />;
       case 'students': return <StudentRegistry />;
       case 'timetable': return <TimetablePage />;
@@ -53,33 +51,11 @@ const MainLayout: React.FC = () => {
   );
 }
 
-const AuthenticatedApp: React.FC = () => {
-  const { isAuthenticated, isLoading } = useAuth();
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="spinner"></div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return <LoginPage />;
-  }
-
+const App: React.FC = () => {
   return (
     <AppProvider>
       <MainLayout />
     </AppProvider>
-  );
-};
-
-const App: React.FC = () => {
-  return (
-    <AuthProvider>
-      <AuthenticatedApp />
-    </AuthProvider>
   );
 };
 

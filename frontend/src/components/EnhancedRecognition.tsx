@@ -4,8 +4,7 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 interface RecognitionProgress {
     matched: number;
@@ -33,6 +32,7 @@ const EnhancedRecognition: React.FC = () => {
     const [session, setSession] = useState<SessionInfo | null>(null);
     const [message, setMessage] = useState<string>('Starting camera...');
     const [isActive, setIsActive] = useState(false);
+    const [reEntryAlert, setReEntryAlert] = useState(false);
 
     const recognitionInterval = useRef<number | null>(null);
 
@@ -73,10 +73,7 @@ const EnhancedRecognition: React.FC = () => {
 
     const fetchActiveSession = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const response = await axios.get(`${API_URL}/api/sessions/active`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const response = await axios.get(`${API_BASE_URL}/sessions/active`);
 
             if (response.data.active) {
                 setSession(response.data.session);
@@ -127,13 +124,11 @@ const EnhancedRecognition: React.FC = () => {
         const frameData = canvas.toDataURL('image/jpeg', 0.8);
 
         try {
-            const token = localStorage.getItem('token');
             const response = await axios.post(
-                `${API_URL}/api/recognize`,
+                `${API_BASE_URL}/recognize`,
                 { image: frameData },
                 {
                     headers: {
-                        Authorization: `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     }
                 }
@@ -141,7 +136,19 @@ const EnhancedRecognition: React.FC = () => {
 
             const result = response.data;
 
-            if (result.confirmed) {
+            if (result.reEntry) {
+                // Re-entry detected!
+                setState('confirmed');
+                setStudentName(result.studentName);
+                setReEntryAlert(true);
+                setMessage(result.message);
+
+                // Show alert for 5 seconds
+                setTimeout(() => {
+                    setReEntryAlert(false);
+                    stopRecognition();
+                }, 5000);
+            } else if (result.confirmed) {
                 // Confirmed recognition
                 setState('confirmed');
                 setStudentName(result.studentName);
@@ -201,6 +208,21 @@ const EnhancedRecognition: React.FC = () => {
                     <p className="text-blue-800">
                         {session.courseName} - {session.professorName}
                     </p>
+                </div>
+            )}
+
+            {/* Re-entry Alert */}
+            {reEntryAlert && (
+                <div className="mb-4 p-4 bg-orange-100 border-2 border-orange-500 rounded-lg animate-pulse">
+                    <div className="flex items-center gap-2">
+                        <span className="text-2xl">⚠️</span>
+                        <div>
+                            <h3 className="font-bold text-orange-900">RE-ENTRY DETECTED!</h3>
+                            <p className="text-orange-800 text-sm">
+                                {studentName} was already marked present. This entry has been logged as suspicious.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             )}
 

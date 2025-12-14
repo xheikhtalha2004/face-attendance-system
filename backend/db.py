@@ -9,25 +9,6 @@ import json
 db = SQLAlchemy()
 
 
-class User(db.Model):
-    """Admin user model for authentication"""
-    __tablename__ = 'users'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    name = db.Column(db.String(100), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'email': self.email,
-            'name': self.name,
-            'created_at': self.created_at.isoformat()
-        }
-
-
 class Student(db.Model):
     """Student model with face embeddings"""
     __tablename__ = 'students'
@@ -154,13 +135,14 @@ class Course(db.Model):
 class TimeSlot(db.Model):
     """Weekly timetable slots"""
     __tablename__ = 'time_slots'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     day_of_week = db.Column(db.String(10), nullable=False)  # MONDAY, TUESDAY, etc.
     slot_number = db.Column(db.Integer, nullable=False)  # 1-5
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
     start_time = db.Column(db.String(5), nullable=False)  # "08:30"
     end_time = db.Column(db.String(5), nullable=False)    # "09:50"
+    room = db.Column(db.String(50))  # Room number or name, e.g., "CS-101"
     late_threshold_minutes = db.Column(db.Integer, default=5)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -184,6 +166,7 @@ class TimeSlot(db.Model):
             'professorName': self.course.professor_name if self.course else None,
             'startTime': self.start_time,
             'endTime': self.end_time,
+            'room': self.room,
             'lateThresholdMinutes': self.late_threshold_minutes,
             'isActive': self.is_active
         }
@@ -200,7 +183,6 @@ class Session(db.Model):
     ends_at = db.Column(db.DateTime, nullable=False)
     late_threshold_minutes = db.Column(db.Integer, default=5)
     status = db.Column(db.String(20), default='ACTIVE')  # SCHEDULED, ACTIVE, COMPLETED, CANCELLED
-    created_by_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     auto_created = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
@@ -241,6 +223,57 @@ class StudentEmbedding(db.Model):
             'qualityScore': self.quality_score,
             'sampleImagePath': self.sample_image_path,
             'createdAt': self.created_at.isoformat()
+        }
+
+
+class Enrollment(db.Model):
+    """Student course enrollment mapping"""
+    __tablename__ = 'enrollments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
+    enrolled_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Unique constraint: one enrollment per student-course pair
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'course_id', name='uq_student_course'),
+    )
+    
+    def to_dict(self):
+        student = Student.query.get(self.student_id)
+        course = Course.query.get(self.course_id)
+        return {
+            'id': self.id,
+            'studentId': self.student_id,
+            'studentName': student.name if student else None,
+            'courseId': self.course_id,
+            'courseName': course.course_name if course else None,
+            'enrolledAt': self.enrolled_at.isoformat()
+        }
+
+
+class ReEntryLog(db.Model):
+    """Track student re-entry (IN/OUT patterns) for suspicious behavior detection"""
+    __tablename__ = 're_entry_logs'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.Integer, db.ForeignKey('sessions.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    action = db.Column(db.String(10), nullable=False)  # 'IN' or 'OUT'
+    detected_at = db.Column(db.DateTime, default=datetime.utcnow)
+    is_suspicious = db.Column(db.Boolean, default=False)
+    
+    def to_dict(self):
+        student = Student.query.get(self.student_id)
+        return {
+            'id': self.id,
+            'sessionId': self.session_id,
+            'studentId': self.student_id,
+            'studentName': student.name if student else 'Unknown',
+            'action': self.action,
+            'detectedAt': self.detected_at.isoformat(),
+            'isSuspicious': self.is_suspicious
         }
 
 
@@ -333,21 +366,24 @@ def get_all_attendance(date_filter=None, student_id=None):
     
     if date_filter:
         # Filter by date
-        query = query.filter(db.func.date(Attendance.timestamp) == date_filter)
+        query = query.filter(db.func.date(Attendance.check_in_time) == date_filter)
     
     if student_id:
         query = query.filter_by(student_id_fk=student_id)
     
-    return query.order_by(Attendance.timestamp.desc()).all()
+    return query.order_by(Attendance.check_in_time.desc()).all()
 
 
-def create_attendance(student_id, status='Present', confidence=None, method='auto', notes=None):
+def create_attendance(student_id, status='PRESENT', confidence=None, method='AUTO', notes=None):
     """Create attendance record"""
+    normalized_status = status.upper() if isinstance(status, str) else status
+    normalized_method = method.upper() if isinstance(method, str) else method
+
     attendance = Attendance(
         student_id_fk=student_id,
-        status=status,
+        status=normalized_status,
         confidence=confidence,
-        method=method,
+        method=normalized_method,
         notes=notes
     )
     db.session.add(attendance)
@@ -358,14 +394,14 @@ def create_attendance(student_id, status='Present', confidence=None, method='aut
 def get_attendance_today():
     """Get today's attendance"""
     today = datetime.utcnow().date()
-    return Attendance.query.filter(db.func.date(Attendance.timestamp) == today).all()
+    return Attendance.query.filter(db.func.date(Attendance.check_in_time) == today).all()
 
 
 def get_student_attendance_today(student_id):
     """Check if student has attendance record today"""
     today = datetime.utcnow().date()
     return Attendance.query.filter(
-        db.func.date(Attendance.timestamp) == today,
+        db.func.date(Attendance.check_in_time) == today,
         Attendance.student_id_fk == student_id
     ).first()
 

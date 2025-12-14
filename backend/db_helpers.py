@@ -94,17 +94,18 @@ def get_time_slot_by_day_slot(day_of_week, slot_number):
     ).first()
 
 
-def create_or_update_time_slot(day_of_week, slot_number, course_id, start_time, end_time, 
-                                late_threshold_minutes=5):
+def create_or_update_time_slot(day_of_week, slot_number, course_id, start_time, end_time,
+                                late_threshold_minutes=5, room=None):
     """Create or update time slot"""
     from db import db, TimeSlot
     slot = get_time_slot_by_day_slot(day_of_week, slot_number)
-    
+
     if slot:
         # Update existing
         slot.course_id = course_id
         slot.start_time = start_time
         slot.end_time = end_time
+        slot.room = room
         slot.late_threshold_minutes = late_threshold_minutes
         slot.updated_at = datetime.utcnow()
     else:
@@ -115,11 +116,12 @@ def create_or_update_time_slot(day_of_week, slot_number, course_id, start_time, 
             course_id=course_id,
             start_time=start_time,
             end_time=end_time,
+            room=room,
             late_threshold_minutes=late_threshold_minutes,
             is_active=True
         )
         db.session.add(slot)
-    
+
     db.session.commit()
     return slot
 
@@ -145,7 +147,7 @@ def get_active_slots_for_day(day_of_week):
 
 
 # Session Management
-def create_session(course_id, starts_at, ends_at, time_slot_id=None, 
+def create_session(course_id, starts_at, ends_at, time_slot_id=None,
                   late_threshold_minutes=5, auto_created=False, created_by=None):
     """Create new session"""
     from db import db, Session
@@ -156,8 +158,7 @@ def create_session(course_id, starts_at, ends_at, time_slot_id=None,
         ends_at=ends_at,
         late_threshold_minutes=late_threshold_minutes,
         status='ACTIVE',
-        auto_created=auto_created,
-        created_by_user_id=created_by
+        auto_created=auto_created
     )
     db.session.add(session)
     db.session.commit()

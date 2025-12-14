@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { Student, AttendanceRecord, AppSettings } from '../types';
-import { MOCK_STUDENTS, MOCK_ATTENDANCE } from '../constants';
 
 interface AppContextType {
   students: Student[];
@@ -15,8 +14,8 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [students, setStudents] = useState<Student[]>(MOCK_STUDENTS);
-  const [attendance, setAttendance] = useState<AttendanceRecord[]>(MOCK_ATTENDANCE);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
     cameraDeviceId: '',
     minConfidenceThreshold: 85,

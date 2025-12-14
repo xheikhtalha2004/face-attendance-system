@@ -4,8 +4,7 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+import { API_BASE_URL } from '../utils/apiConfig';
 
 interface EnrollmentProps {
     studentId: number;
@@ -108,16 +107,14 @@ export const MultiFrameEnrollment: React.FC<EnrollmentProps> = ({
         setStatus('Processing frames on server...');
 
         try {
-            const token = localStorage.getItem('token');
             const response = await axios.post(
-                `${API_URL}/api/students/${studentId}/enroll-frames`,
+                `${API_BASE_URL}/students/${studentId}/enroll-frames`,
                 {
                     frames: capturedFrames,
                     maxEmbeddings: 10
                 },
                 {
                     headers: {
-                        Authorization: `Bearer ${token}`,
                         'Content-Type': 'application/json'
                     }
                 }

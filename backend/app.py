@@ -4,11 +4,10 @@ Implements REST API endpoints per SRDS specification
 """
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
-from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 import os
 import sys
+import logging
 from datetime import datetime, timedelta
 import cv2
 import numpy as np
@@ -18,7 +17,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ml_cvs'))
 
 from db import (
-    db, init_db, User, Student, Attendance,
+    db, init_db, Student, Attendance,
     get_all_students, get_student_by_id, create_student, update_student, delete_student,
     get_all_attendance, create_attendance, get_student_attendance_today,
     get_all_face_encodings, get_settings, update_setting
@@ -31,22 +30,29 @@ load_dotenv()
 # Initialize Flask app
 app = Flask(__name__)
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+app.logger.setLevel(logging.INFO)
+
 # Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///data.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET_KEY', 'dev-secret-key-change-in-production')
-app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
 app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Initialize extensions
-CORS(app, origins=os.getenv('ALLOWED_ORIGINS', 'http://localhost:5173').split(','))
-jwt = JWTManager(app)
+CORS(app, origins=os.getenv('ALLOWED_ORIGINS', 'http://localhost:3001,http://localhost:5173').split(','))
 init_db(app)
 
 # Register blueprints
 from timetable_api import timetable_bp
 app.register_blueprint(timetable_bp)
+
+from registration_api import registration_bp
+app.register_blueprint(registration_bp)
+
+from enrollment_api import enrollment_bp
+app.register_blueprint(enrollment_bp)
 
 # Initialize scheduler service for auto-session creation
 from scheduler_service import init_scheduler
@@ -65,83 +71,10 @@ def allowed_file(filename):
 
 
 # ============================================================================
-# AUTHENTICATION ENDPOINTS
-# ============================================================================
-
-@app.route('/api/auth/register', methods=['POST'])
-def register():
-    """Register new admin user"""
-    try:
-        data = request.get_json()
-        
-        email = data.get('email')
-        password = data.get('password')
-        name = data.get('name')
-        
-        if not all([email, password, name]):
-            return jsonify({'error': 'Missing required fields'}), 400
-        
-        # Check if user exists
-        existing_user = User.query.filter_by(email=email).first()
-        if existing_user:
-            return jsonify({'error': 'User already exists'}), 409
-        
-        # Create user
-        password_hash = generate_password_hash(password)
-        user = User(email=email, password_hash=password_hash, name=name)
-        db.session.add(user)
-        db.session.commit()
-        
-        # Create access token
-        access_token = create_access_token(identity=email)
-        
-        return jsonify({
-            'message': 'User created successfully',
-            'user': user.to_dict(),
-            'access_token': access_token
-        }), 201
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-@app.route('/api/auth/login', methods=['POST'])
-def login():
-    """Login and get JWT token"""
-    try:
-        data = request.get_json()
-        
-        email = data.get('email')
-        password = data.get('password')
-        
-        if not all([email, password]):
-            return jsonify({'error': 'Missing email or password'}), 400
-        
-        # Find user
-        user = User.query.filter_by(email=email).first()
-        
-        if not user or not check_password_hash(user.password_hash, password):
-            return jsonify({'error': 'Invalid credentials'}), 401
-        
-        # Create access token
-        access_token = create_access_token(identity=email)
-        
-        return jsonify({
-            'message': 'Login successful',
-            'user': user.to_dict(),
-            'access_token': access_token
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-
-# ============================================================================
 # STUDENT ENDPOINTS
 # ============================================================================
 
 @app.route('/api/students', methods=['GET'])
-@jwt_required()
 def get_students():
     """Get all students"""
     try:
@@ -152,7 +85,6 @@ def get_students():
 
 
 @app.route('/api/students/<int:student_id>', methods=['GET'])
-@jwt_required()
 def get_student(student_id):
     """Get student by ID"""
     try:
@@ -166,7 +98,6 @@ def get_student(student_id):
 
 
 @app.route('/api/students', methods=['POST'])
-@jwt_required()
 def register_student():
     """Register new student with face image"""
     try:
@@ -240,7 +171,6 @@ def register_student():
 
 
 @app.route('/api/students/<int:student_id>/enroll-frames', methods=['POST'])
-@jwt_required()
 def enroll_student_multi_frame(student_id):
     """
     Enhanced enrollment with multiple frames
@@ -299,7 +229,6 @@ def enroll_student_multi_frame(student_id):
 
 
 @app.route('/api/students/<int:student_id>', methods=['PUT'])
-@jwt_required()
 def update_student_info(student_id):
     """Update student information"""
     try:
@@ -320,7 +249,6 @@ def update_student_info(student_id):
 
 
 @app.route('/api/students/<int:student_id>', methods=['DELETE'])
-@jwt_required()
 def delete_student_record(student_id):
     """Delete student"""
     try:
@@ -340,7 +268,6 @@ def delete_student_record(student_id):
 # ============================================================================
 
 @app.route('/api/attendance', methods=['GET'])
-@jwt_required()
 def get_attendance_records():
     """Get attendance records with optional filters"""
     try:
@@ -359,201 +286,233 @@ def get_attendance_records():
 
 
 @app.route('/api/recognize', methods=['POST'])
-@jwt_required()
 def recognize_face():
     """
-    Enhanced face recognition with InsightFace + K-of-N stabilization
-    Returns recognition result and updates session attendance if confirmed
+    Real-time face recognition with K-of-N confirmation and re-entry detection
     """
     try:
-        # Get frame from request
         data = request.get_json()
         
         if 'image' not in data:
             return jsonify({'error': 'No image provided'}), 400
         
         # Decode base64 image
-        from enrollment_service import decode_base64_image
-        frame = decode_base64_image(data['image'])
+        import base64
+        img_data = data['image'].split(',')[1] if ',' in data['image'] else data['image']
+        img_bytes = base64.b64decode(img_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
         
         if frame is None:
             return jsonify({'error': 'Invalid image data'}), 400
         
-        # Initialize face engine and stabilizer (singleton pattern recommended in production)
-        from ml_cvs.face_engine import create_face_engine
-        from ml_cvs.stabilizer import RecognitionStabilizer
-        import sys
+        # Get active session
+        from db import get_active_session
+        active_session = get_active_session()
         
-        # Create or get global instances
-        if not hasattr(app, 'face_engine'):
-            app.face_engine = create_face_engine(use_gpu=False)
-            app.logger.info("Face engine initialized")
+        if not active_session:
+            return jsonify({'recognized': False, 'message': 'No active session'}), 200
         
-        if not hasattr(app, 'stabilizer'):
-            app.stabilizer = RecognitionStabilizer(k=5, n=10, cooldown_seconds=120)
-            app.logger.info("Stabilizer initialized")
+        # Initialize face engine and stabilizer (lazy loading)
+        global _face_engine, _stabilizer
+        if _face_engine is None:
+            try:
+                from ml_cvs.face_engine import create_face_engine
+                _face_engine = create_face_engine(use_gpu=False)
+                app.logger.info("Face engine initialized")
+            except ImportError as e:
+                app.logger.error(f"InsightFace not installed: {str(e)}")
+                return jsonify({
+                    'recognized': False,
+                    'error': 'InsightFace not installed. See INSIGHTFACE_INSTALL.md for instructions.'
+                }), 500
+            except Exception as e:
+                app.logger.error(f"Face engine initialization error: {str(e)}")
+                return jsonify({
+                    'recognized': False,
+                    'error': f'Face engine error: {str(e)}'
+                }), 500
         
-        face_engine = app.face_engine
-        stabilizer = app.stabilizer
+        if _stabilizer is None:
+            try:
+                from ml_cvs.stabilizer import create_stabilizer
+                _stabilizer = create_stabilizer(k=5, n=10, cooldown=120)
+                app.logger.info("Stabilizer initialized")
+            except Exception as e:
+                app.logger.error(f"Stabilizer initialization error: {str(e)}")
+                return jsonify({
+                    'recognized': False,
+                    'error': f'Stabilizer error: {str(e)}'
+                }), 500
         
-        # Detect faces in frame
-        detected_faces = face_engine.detect_faces(frame)
+        # Detect faces
+        faces = _face_engine.detect_faces(frame)
         
-        if not detected_faces:
+        if len(faces) == 0:
+            return jsonify({'recognized': False, 'message': 'No face detected'}), 200
+        
+        if len(faces) > 1:
             return jsonify({
-                'recognized': False,
-                'message': 'No face detected',
-                'progress': {}
+                'recognized': False, 
+                'message': f'Multiple faces detected ({len(faces)}). Please ensure only one person in frame'
             }), 200
         
-        if len(detected_faces) > 1:
+        # Extract embedding
+        query_embedding = faces[0]['embedding']
+        
+        # Load enrolled students for this course
+        from db import Enrollment, Student, db
+        enrolled_students = db.session.query(Student).join(Enrollment).filter(
+            Enrollment.course_id == active_session.course_id
+        ).all()
+        
+        if not enrolled_students:
             return jsonify({
-                'recognized': False,
-                'message': f'Multiple faces detected ({len(detected_faces)}). Please ensure only one person in frame',
-                'faceCount': len(detected_faces)
+                'recognized': False, 
+                'message': 'No students enrolled in this course'
             }), 200
         
-        # Get the single detected face
-        face_data = detected_faces[0]
-        query_embedding = face_data['embedding']
-        landmarks = face_data['kps']
-        det_score = face_data['det_score']
-        
-        # Quality check
-        from ml_cvs.quality import check_quality_gates
-        from ml_cvs.face_engine import extract_crop_from_bbox
-        
-        face_crop = extract_crop_from_bbox(frame, face_data['bbox'])
-        quality = check_quality_gates(face_crop, landmarks)
-        
-        if not quality['passed']:
-            return jsonify({
-                'recognized': False,
-                'message': f'Quality check failed: {quality["reason"]}',
-                'quality': quality
-            }), 200
-        
-        # Get all students with embeddings
-        from db import get_all_students_with_embeddings
-        students_data = get_all_students_with_embeddings()
-        
-        if not students_data:
-            return jsonify({
-                'recognized': False,
-                'message': 'No enrolled students found'
-            }), 200
-        
-        # Prepare for matching: format as (student_id, student_name, [embeddings])
+        # Get their embeddings
         import pickle
-        known_embeddings = []
-        for student_data in students_data:
-            student_id = student_data['student_id']
-            student_name = student_data['student_name']
-            embeddings_serialized = student_data['embeddings']
-            
-            # Deserialize embeddings
-            embeddings = [pickle.loads(emb_bytes) for emb_bytes in embeddings_serialized]
-            known_embeddings.append((student_id, student_name, embeddings))
+        from db import get_student_all_embeddings
+        student_data = []
+        for student in enrolled_students:
+            embeddings = get_student_all_embeddings(student.id)
+            if embeddings:
+                student_data.append((
+                    student.id,
+                    student.name,
+                    [pickle.loads(emb.embedding) for emb in embeddings]
+                ))
+        
+        if not student_data:
+            return jsonify({
+                'recognized': False, 
+                'message': 'No facial data available for enrolled students'
+            }), 200
         
         # Find best match
-        match_result = face_engine.find_best_match(
-            query_embedding,
-            known_embeddings,
-            threshold=0.35
-        )
+        match = _face_engine.find_best_match(query_embedding, student_data, threshold=0.35)
         
-        if match_result is None:
-            # No match - update stabilizer with None
-            stabilizer.update(None, 0.0)
-            
+        if not match:
             return jsonify({
-                'recognized': False,
-                'message': 'Face not recognized',
-                'confidence': 0.0
+                'recognized': False, 
+                'message': 'Unknown face (not enrolled in this course)'
             }), 200
         
-        student_id, student_name, similarity = match_result
+        student_id, student_name, similarity = match
         
         # Update stabilizer
-        stabilizer.update(student_id, similarity)
+        _stabilizer.update(student_id, similarity)
         
-        # Check if confirmed (K-of-N threshold met)
-        confirmed = stabilizer.get_confirmed()
+        # Get progress
+        progress = _stabilizer.get_progress(student_id)
+        
+        # Check K-of-N confirmation
+        confirmed = _stabilizer.get_confirmed()
         
         if confirmed:
-            confirmed_student_id, confirmed_similarity = confirmed
+            sid, agg_similarity = confirmed
             
-            # Mark as confirmed to start cooldown
-            stabilizer.mark_confirmed(confirmed_student_id)
+            # Check if already marked
+            from db import Attendance, ReEntryLog
+            existing = Attendance.query.filter_by(
+                session_id=active_session.id,
+                student_id_fk=sid
+            ).first()
             
-            # Get active session
-            from db import get_active_session, upsert_attendance
-            active_session = get_active_session()
-            
-            if not active_session:
+            if existing:
+                # RE-ENTRY DETECTION
+                # Log as OUT then IN
+                out_log = ReEntryLog(
+                    session_id=active_session.id,
+                    student_id=sid,
+                    action='OUT',
+                    is_suspicious=True
+                )
+                db.session.add(out_log)
+                
+                in_log = ReEntryLog(
+                    session_id=active_session.id,
+                    student_id=sid,
+                    action='IN',
+                    is_suspicious=True
+                )
+                db.session.add(in_log)
+                db.session.commit()
+                
+                app.logger.warning(f"Re-entry detected: {student_name} (ID: {sid}) in session {active_session.id}")
+                
                 return jsonify({
                     'recognized': True,
                     'confirmed': True,
-                    'studentId': confirmed_student_id,
+                    'alreadyMarked': True,
+                    'reEntry': True,
+                    'studentId': sid,
                     'studentName': student_name,
-                    'confidence': round(confirmed_similarity, 3),
-                    'message': 'Confirmed! But no active session to mark attendance',
-                    'session': None
+                    'message': '⚠️ Re-entry detected! Logged as suspicious.',
+                    'attendance': existing.to_dict()
                 }), 200
             
-            # Upsert attendance (creates or updates)
+            # Mark attendance (first time)
+            from db import upsert_attendance
             attendance = upsert_attendance(
                 session_id=active_session.id,
-                student_id=confirmed_student_id,
-                status='PRESENT',  # Will be adjusted by upsert logic
-                confidence=confirmed_similarity,
-                method='AUTO',
-                notes=f'Confirmed with {similarity:.3f} similarity (K-of-N voting)'
+                student_id=sid,
+                status='PRESENT',  # Will auto-detect LATE based on time
+                confidence=agg_similarity,
+                method='AUTO'
             )
             
-            # Get progress for UI
-            progress = stabilizer.get_progress(confirmed_student_id)
+            # Log first entry
+            entry_log = ReEntryLog(
+                session_id=active_session.id,
+                student_id=sid,
+                action='IN',
+                is_suspicious=False
+            )
+            db.session.add(entry_log)
+            db.session.commit()
+            
+            _stabilizer.mark_confirmed(sid)
+            
+            app.logger.info(f"Attendance marked: {student_name} (ID: {sid}) - {attendance.status}")
             
             return jsonify({
                 'recognized': True,
                 'confirmed': True,
-                'studentId': confirmed_student_id,
+                'studentId': sid,
                 'studentName': student_name,
-                'confidence': round(confirmed_similarity, 3),
-                'message': f'Attendance marked: {attendance.status}',
-                'session': {
-                    'id': active_session.id,
-                    'courseName': active_session.course.course_name if active_session.course else None,
-                    'professorName': active_session.course.professor_name if active_session.course else None
-                },
+                'confidence': round(agg_similarity, 3),
+                'message': f'✓ Attendance marked: {attendance.status}',
                 'attendance': attendance.to_dict(),
-                'progress': progress
+                'session': active_session.to_dict()
             }), 200
         
-        else:
-            # Not confirmed yet - show progress
-            progress = stabilizer.get_progress(student_id)
-            
-            return jsonify({
-                'recognized': True,
-                'confirmed': False,
-                'verifying': True,
-                'studentId': student_id,
-                'studentName': student_name,
-                'confidence': round(similarity, 3),
-                'message': f'Verifying... ({progress["matched"]}/{progress["required"]})',
-                'progress': progress
-            }), 200
+        # Still verifying (not enough matches yet)
+        return jsonify({
+            'recognized': True,
+            'confirmed': False,
+            'verifying': True,
+            'studentName': student_name,
+            'confidence': round(similarity, 3),
+            'message': f'Verifying... ({progress["matched"]}/{progress["required"]})',
+            'progress': progress
+        }), 200
         
     except Exception as e:
-        app.logger.error(f"Recognition error: {str(e)}")
+        app.logger.error(f'Recognition error: {str(e)}')
         import traceback
         app.logger.error(traceback.format_exc())
         return jsonify({'error': str(e)}), 500
 
 
+# Global instances for face engine and stabilizer
+_face_engine = None
+_stabilizer = None
+
+
 @app.route('/api/attendance/mark', methods=['POST'])
-@jwt_required()
 def mark_attendance_manual():
     """Manually mark attendance"""
     try:
@@ -588,7 +547,6 @@ def mark_attendance_manual():
 # ============================================================================
 
 @app.route('/api/sessions/active', methods=['GET'])
-@jwt_required()
 def get_active_session_endpoint():
     """Get currently active session"""
     try:
@@ -612,7 +570,6 @@ def get_active_session_endpoint():
 
 
 @app.route('/api/sessions/today', methods=['GET'])
-@jwt_required()
 def get_today_sessions():
     """Get all sessions for today"""
     try:
@@ -628,12 +585,84 @@ def get_today_sessions():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/sessions/<int:session_id>/finalize', methods=['POST'])
+def finalize_session(session_id):
+    """
+    Manually finalize session and mark absentees
+    Only marks absent students who are enrolled in the course
+    """
+    try:
+        from db import Session, Enrollment, Attendance, Student, db, mark_students_absent
+        
+        session = Session.query.get(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        if session.status == 'COMPLETED':
+            return jsonify({'error': 'Session already finalized'}), 400
+        
+        # Get enrolled students for this course
+        enrolled = db.session.query(Student.id).join(Enrollment).filter(
+            Enrollment.course_id == session.course_id
+        ).all()
+        enrolled_ids = [e[0] for e in enrolled]
+        
+        # Get students with attendance
+        present = db.session.query(Attendance.student_id_fk).filter_by(
+            session_id=session_id
+        ).all()
+        present_ids = set([p[0] for p in present])
+        
+        # Mark absentees (enrolled but not present)
+        absent_ids = [sid for sid in enrolled_ids if sid not in present_ids]
+        marked = mark_students_absent(session_id, absent_ids)
+        
+        # Update session status
+        session.status = 'COMPLETED'
+        db.session.commit()
+        
+        app.logger.info(f"Session {session_id} finalized. {len(marked)} students marked absent.")
+        
+        return jsonify({
+            'message': f'Session finalized. {len(marked)} students marked absent.',
+            'absentCount': len(marked),
+            'totalEnrolled': len(enrolled_ids),
+            'presentCount': len(present_ids),
+            'session': session.to_dict()
+        }), 200
+        
+    except Exception as e:
+        app.logger.error(f"Finalization error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/sessions/<int:session_id>/export', methods=['GET'])
+def export_session_csv_endpoint(session_id):
+    """Export session attendance as CSV file"""
+    try:
+        from flask import Response
+        from export_service import export_session_csv
+        
+        csv_data = export_session_csv(session_id)
+        
+        if csv_data is None:
+            return jsonify({'error': 'Session not found'}), 404
+        
+        return Response(
+            csv_data,
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename=session_{session_id}_attendance.csv'}
+        )
+    except Exception as e:
+        app.logger.error(f"Export error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 # ============================================================================
 # DASHBOARD ENDPOINTS
 # ============================================================================
 
 @app.route('/api/dashboard/stats', methods=['GET'])
-@jwt_required()
 def get_dashboard_stats():
     """Get dashboard statistics for today"""
     try:
@@ -675,7 +704,6 @@ def get_dashboard_stats():
 
 
 @app.route('/api/dashboard/weekly', methods=['GET'])
-@jwt_required()
 def get_weekly_attendance():
     """Get weekly attendance data for charts"""
     try:
@@ -713,7 +741,6 @@ def get_weekly_attendance():
 # ============================================================================
 
 @app.route('/api/settings', methods=['GET'])
-@jwt_required()
 def get_system_settings():
     """Get system settings"""
     try:
@@ -724,7 +751,6 @@ def get_system_settings():
 
 
 @app.route('/api/settings', methods=['PUT'])
-@jwt_required()
 def update_system_settings():
     """Update system settings"""
     try:
