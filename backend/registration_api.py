@@ -62,43 +62,86 @@ def self_register():
         if get_student_by_student_id(student_id):
             return jsonify({'error': f'Student ID {student_id} is already registered'}), 400
 
-        # Process facial enrollment (skip if face engine not available)
+        # Process facial enrollment - REQUIRED for face recognition to work
         face_data_available = False
+        result = None
+        
         try:
             from enrollment_service import process_enrollment_frames
+            app.logger.info(f"Processing {len(frames)} frames for student {student_id}")
+            
             result = process_enrollment_frames(frames, max_embeddings=10)
+            
             if result['success']:
                 face_data_available = True
+                app.logger.info(f"Face processing successful: {len(result['embeddings'])} embeddings extracted")
             else:
-                app.logger.warning(f"Face processing failed: {result['message']}")
+                # Face processing failed - return error instead of continuing
+                error_msg = result.get('message', 'Unknown face processing error')
+                app.logger.error(f"Face processing failed for {student_id}: {error_msg}")
+                app.logger.error(f"Frames submitted: {result.get('total_frames', 0)}, Valid frames: {result.get('valid_frames', 0)}")
+                return jsonify({
+                    'error': f'Face enrollment failed: {error_msg}',
+                    'details': {
+                        'totalFrames': result.get('total_frames', 0),
+                        'validFrames': result.get('valid_frames', 0),
+                        'reason': error_msg
+                    }
+                }), 400
+                
         except ImportError as e:
-            app.logger.warning(f"Face engine not available: {str(e)}. Registering without facial data.")
+            app.logger.error(f"Face engine not available: {str(e)}")
+            import traceback
+            app.logger.error(traceback.format_exc())
+            return jsonify({
+                'error': 'Face recognition system not available. Please contact administrator.',
+                'details': 'InsightFace or ML dependencies not installed'
+            }), 500
+            
         except Exception as e:
-            app.logger.warning(f"Face processing error: {str(e)}. Registering without facial data.")
+            app.logger.error(f"Face processing error for {student_id}: {str(e)}")
+            import traceback
+            app.logger.error(traceback.format_exc())
+            return jsonify({
+                'error': f'Face processing failed: {str(e)}',
+                'details': 'Unexpected error during face enrollment'
+            }), 500
 
-        # Create student record
+        # Create student record (only if face processing succeeded)
         from db import create_student, create_student_embedding, db, Enrollment
         student = create_student(
             name=name,
             student_id=student_id,
             department=department,
             email=email,
-            face_encoding=None if not face_data_available else result['embeddings'][0]  # Store first for legacy compatibility
+            face_encoding=result['embeddings'][0]
         )
 
-        # Save embeddings if available
-        if face_data_available:
-            for emb, quality in zip(result['embeddings'], result['quality_scores']):
-                create_student_embedding(
-                    student_id=student.id,
-                    embedding=emb,
-                    quality_score=quality
-                )
+        # Save all embeddings
+        embeddings_saved = 0
+        for emb, quality in zip(result['embeddings'], result['quality_scores']):
+            create_student_embedding(
+                student_id=student.id,
+                embedding=emb,
+                quality_score=quality
+            )
+            embeddings_saved += 1
+        
+        app.logger.info(f"Saved {embeddings_saved} embeddings for student {student_id}")
 
-        if face_data_available:
-            app.logger.info(f"Student registered: {student_id} ({name}) with {len(result['embeddings'])} embeddings")
-        else:
-            app.logger.info(f"Student registered: {student_id} ({name}) without facial data")
+        # Verify embeddings were saved
+        from db import get_student_all_embeddings
+        saved_embeddings = get_student_all_embeddings(student.id)
+        if len(saved_embeddings) == 0:
+            app.logger.error(f"CRITICAL: Student {student_id} created but no embeddings were saved!")
+            db.session.delete(student)
+            db.session.commit()
+            return jsonify({
+                'error': 'Failed to save face embeddings. Please try again.',
+                'details': 'Embeddings were processed but not persisted to database'
+            }), 500
+        
+        app.logger.info(f"Student registered: {student_id} ({name}) with {len(saved_embeddings)} embeddings verified in database")
 
         # Enroll in selected courses
         enrolled_courses = []
@@ -114,24 +157,19 @@ def self_register():
 
         app.logger.info(f"Student {student_id} enrolled in {len(enrolled_courses)} courses")
 
-        message = f'Registration successful! Enrolled in {len(enrolled_courses)} courses.'
-        if not face_data_available:
-            message += ' Note: Facial recognition not available - registered without face data.'
+        message = f'Registration successful! Enrolled in {len(enrolled_courses)} courses with {len(saved_embeddings)} facial embeddings.'
 
         response_data = {
             'success': True,
             'message': message,
             'student': student.to_dict(),
             'coursesEnrolled': len(enrolled_courses),
-            'faceDataAvailable': face_data_available
+            'embeddingsSaved': len(saved_embeddings),
+            'totalFrames': result['total_frames'],
+            'validFrames': result['valid_frames']
         }
 
-        if face_data_available:
-            response_data.update({
-                'embeddingsSaved': len(result['embeddings']),
-                'totalFrames': result['total_frames'],
-                'validFrames': result['valid_frames']
-            })
+        # Response data already includes all necessary fields above
 
         return jsonify(response_data), 201
 

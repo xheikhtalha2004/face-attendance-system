@@ -27,7 +27,7 @@ class EmbeddingExtractor:
         try:
             import face_recognition
             self.model = 'face_recognition'
-            print("✓ Using face_recognition library for embeddings")
+            print("[OK] Using face_recognition library for embeddings")
         except ImportError:
             print("Warning: face_recognition not available")
             self.model = None

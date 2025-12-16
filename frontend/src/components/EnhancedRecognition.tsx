@@ -119,14 +119,22 @@ const EnhancedRecognition: React.FC = () => {
     };
 
     const processFrame = async () => {
+        console.log('[DEBUG] processFrame called', { isActive, isProcessing: isProcessingFrame.current });
+        
         if (!isActive || isProcessingFrame.current) return;
-        if (!videoRef.current || !canvasRef.current) return;
+        if (!videoRef.current || !canvasRef.current) {
+            console.log('[DEBUG] Missing refs', { video: !!videoRef.current, canvas: !!canvasRef.current });
+            return;
+        }
 
         const canvas = canvasRef.current;
         const video = videoRef.current;
         const context = canvas.getContext('2d');
 
-        if (!context) return;
+        if (!context) {
+            console.log('[DEBUG] No canvas context');
+            return;
+        }
 
         isProcessingFrame.current = true;
 
@@ -136,6 +144,8 @@ const EnhancedRecognition: React.FC = () => {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
         const frameData = canvas.toDataURL('image/jpeg', 0.8);
+        
+        console.log('[DEBUG] Sending frame to /recognize');
 
         try {
             const response = await axios.post(
@@ -149,6 +159,7 @@ const EnhancedRecognition: React.FC = () => {
             );
 
             const result = response.data;
+            console.log('[DEBUG] Recognition response:', result);
 
             if (result.reEntry) {
                 // Re-entry detected!

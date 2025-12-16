@@ -36,13 +36,13 @@ class FaceEngine:
             self.app = FaceAnalysis(name=model_name)
             self.app.prepare(ctx_id=ctx_id, det_size=(640, 640))
             
-            print(f"✓ InsightFace initialized ({model_name})")
-            print(f"✓ Using {'GPU' if ctx_id >= 0 else 'CPU'}")
+            print(f"[OK] InsightFace initialized ({model_name})")
+            print(f"[OK] Using {'GPU' if ctx_id >= 0 else 'CPU'}")
         except Exception as e:
             print(f"Error initializing InsightFace: {str(e)}")
             raise
         
-        print("✓ InsightFace initialized successfully")
+        print("[OK] InsightFace initialized successfully")
     
     def detect_faces(self, frame: np.ndarray) -> List[Dict]:
         """
