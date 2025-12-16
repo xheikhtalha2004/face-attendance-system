@@ -46,27 +46,32 @@ def create_course_endpoint():
     """Create new course"""
     try:
         data = request.get_json()
-        
+
         course_id = data.get('courseId')
         course_name = data.get('courseName')
         professor_name = data.get('professorName')
         description = data.get('description')
-        
+
         if not all([course_id, course_name]):
             return jsonify({'error': 'Missing required fields'}), 400
-        
+
+        # Prevent duplicate course codes
+        from db_helpers import get_course_by_course_id
+        if get_course_by_course_id(course_id):
+            return jsonify({'error': f'Course {course_id} already exists'}), 409
+
         course = create_course(
             course_id=course_id,
             course_name=course_name,
             professor_name=professor_name,
             description=description
         )
-        
+
         return jsonify({
             'message': 'Course created successfully',
             'course': course.to_dict()
         }), 201
-        
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

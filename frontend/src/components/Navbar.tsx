@@ -7,7 +7,6 @@ interface NavbarProps {
 }
 
 const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
-
   return (
     <nav className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -29,49 +28,42 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'dashboard' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
               >
-                📊 Dashboard
+                Dashboard
               </button>
               <button
                 onClick={() => onNavigate('recognition')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'recognition' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
               >
-                🎥 Recognition
+                Recognition
               </button>
               <button
                 onClick={() => onNavigate('attendance')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'attendance' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
               >
-                📋 Attendance
-              </button>
-              <button
-                onClick={() => onNavigate('students')}
-                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'students' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
-                  }`}
-              >
-                👥 Students
+                Attendance
               </button>
               <button
                 onClick={() => onNavigate('registration')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'registration' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
               >
-                📝 Register
+                Register
               </button>
               <button
                 onClick={() => onNavigate('timetable')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'timetable' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
               >
-                📅 Timetable
+                Timetable
               </button>
               <button
                 onClick={() => onNavigate('reports')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'reports' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
                   }`}
               >
-                📈 Reports
+                Reports
               </button>
             </div>
 

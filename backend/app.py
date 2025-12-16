@@ -22,7 +22,6 @@ from db import (
     get_all_attendance, create_attendance, get_student_attendance_today,
     get_all_face_encodings, get_settings, update_setting
 )
-from recognition import recognize_from_frame, process_registration
 
 # Load environment variables
 load_dotenv()
@@ -41,7 +40,16 @@ app.config['UPLOAD_FOLDER'] = os.getenv('UPLOAD_FOLDER', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
 
 # Initialize extensions
-CORS(app, origins=os.getenv('ALLOWED_ORIGINS', 'http://localhost:3001,http://localhost:5173').split(','))
+CORS(app, origins=['*'], supports_credentials=True, methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allow_headers=['Content-Type', 'Authorization'])
+
+# Add CORS headers manually as fallback
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    return response
 init_db(app)
 
 # Register blueprints
@@ -450,7 +458,7 @@ def recognize_face():
                     'reEntry': True,
                     'studentId': sid,
                     'studentName': student_name,
-                    'message': '⚠️ Re-entry detected! Logged as suspicious.',
+                    'message': 'Re-entry detected! Logged as suspicious.',
                     'attendance': existing.to_dict()
                 }), 200
             
@@ -484,7 +492,7 @@ def recognize_face():
                 'studentId': sid,
                 'studentName': student_name,
                 'confidence': round(agg_similarity, 3),
-                'message': f'✓ Attendance marked: {attendance.status}',
+                'message': f'Attendance marked: {attendance.status}',
                 'attendance': attendance.to_dict(),
                 'session': active_session.to_dict()
             }), 200
@@ -820,4 +828,3 @@ if __name__ == '__main__':
     )
 
     app.run(host='0.0.0.0', port=port, debug=debug)
-

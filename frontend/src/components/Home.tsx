@@ -16,9 +16,9 @@ const Home: React.FC<HomeProps> = ({ onNavigate }) => {
       color: 'from-blue-600 to-indigo-600'
     },
     {
-      id: 'students',
-      title: 'Student Information',
-      description: 'Manage profiles, biometrics, and academic details.',
+      id: 'registration',
+      title: 'Student Registration',
+      description: 'Self-enroll students with facial capture and course selection.',
       icon: Users,
       image: 'https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=2070&auto=format&fit=crop', // Students group
       color: 'from-emerald-600 to-teal-600'

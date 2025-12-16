@@ -142,47 +142,36 @@ class FaceRecognizer:
         
         return result
     
-    def _find_best_match(self, query_embedding: np.ndarray, 
+    def _find_best_match(self, query_embedding: np.ndarray,
                         known_embeddings: List[Tuple[int, str, bytes]]) -> Optional[Tuple[int, str, float]]:
         """
         Find best matching student
-        
+
         Args:
             query_embedding: Query face embedding
             known_embeddings: List of known student embeddings
-            
+
         Returns:
             (student_id, name, confidence) or None
         """
-        best_distance = float('inf')
+        best_similarity = 0.0
         best_match = None
-        
+
         for student_id, name, embedding_bytes in known_embeddings:
             # Deserialize embedding
             known_embedding = self.extractor.deserialize_embedding(embedding_bytes)
-            
+
             if known_embedding is None:
                 continue
-            
-            # Calculate distance
-            distance = self.extractor.compare_embeddings(query_embedding, known_embedding)
-            
-            if distance < best_distance:
-                best_distance = distance
-                best_match = (student_id, name, distance)
-        
-        if best_match is None:
-            return None
-        
-        student_id, name, distance = best_match
-        
-        # Convert distance to confidence
-        confidence = self.extractor.calculate_similarity(query_embedding, 
-                                                        self.extractor.deserialize_embedding(
-                                                            [e for e in known_embeddings if e[0] == student_id][0][2]
-                                                        ))
-        
-        return (student_id, name, confidence)
+
+            # Calculate similarity
+            similarity = self.extractor.calculate_similarity(query_embedding, known_embedding)
+
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_match = (student_id, name, similarity)
+
+        return best_match
     
     def _is_duplicate_detection(self, student_id: int) -> bool:
         """

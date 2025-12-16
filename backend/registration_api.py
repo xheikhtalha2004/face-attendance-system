@@ -21,62 +21,85 @@ def self_register():
         "name": "Alice Smith",
         "studentId": "SP21-BCS-001",
         "email": "alice@test.com",
-        "frames": [...],  // 15 base64 frames
-        "selectedCourses": [1, 2]  // Course IDs
+        "department": "Software Engineering",
+        "frames": [...],  # 15 base64 frames
+        "selectedCourses": [1, 2]  # Course IDs
     }
     """
     try:
         from app import app
-        
+
         data = request.get_json()
+
         name = data.get('name')
         student_id = data.get('studentId')
         email = data.get('email')
+        department = data.get('department') or 'General'
         frames = data.get('frames', [])
         selected_courses = data.get('selectedCourses', [])
-        
+
         # Validation
         if not all([name, student_id]):
             return jsonify({'error': 'Name and Student ID are required'}), 400
-        
+
+        if not department:
+            return jsonify({'error': 'Department is required'}), 400
+
         if not validate_student_id(student_id):
             return jsonify({'error': 'Invalid Student ID format. Use SPXX-BCS-XXX (e.g., SP21-BCS-001)'}), 400
-        
+
         if not frames or len(frames) < 5:
             return jsonify({'error': 'At least 5 facial frames are required for enrollment'}), 400
-        
+
+        # Clean selected course IDs (deduplicate + ensure ints)
+        try:
+            selected_courses = list({int(c) for c in selected_courses})
+        except Exception:
+            return jsonify({'error': 'Course IDs must be numeric'}), 400
+
         # Check if student ID already exists
         from db import get_student_by_student_id
         if get_student_by_student_id(student_id):
             return jsonify({'error': f'Student ID {student_id} is already registered'}), 400
-        
-        # Process facial enrollment
-        from enrollment_service import process_enrollment_frames
-        result = process_enrollment_frames(frames, max_embeddings=10)
-        
-        if not result['success']:
-            return jsonify({'error': result['message']}), 400
-        
+
+        # Process facial enrollment (skip if face engine not available)
+        face_data_available = False
+        try:
+            from enrollment_service import process_enrollment_frames
+            result = process_enrollment_frames(frames, max_embeddings=10)
+            if result['success']:
+                face_data_available = True
+            else:
+                app.logger.warning(f"Face processing failed: {result['message']}")
+        except ImportError as e:
+            app.logger.warning(f"Face engine not available: {str(e)}. Registering without facial data.")
+        except Exception as e:
+            app.logger.warning(f"Face processing error: {str(e)}. Registering without facial data.")
+
         # Create student record
         from db import create_student, create_student_embedding, db, Enrollment
         student = create_student(
             name=name,
             student_id=student_id,
-            department='Computer Science',  # Hardcoded
+            department=department,
             email=email,
-            face_encoding=result['embeddings'][0]  # Store first for legacy compatibility
+            face_encoding=None if not face_data_available else result['embeddings'][0]  # Store first for legacy compatibility
         )
-        
-        # Save all embeddings
-        for emb, quality in zip(result['embeddings'], result['quality_scores']):
-            create_student_embedding(
-                student_id=student.id,
-                embedding=emb,
-                quality_score=quality
-            )
-        
-        app.logger.info(f"Student registered: {student_id} ({name}) with {len(result['embeddings'])} embeddings")
-        
+
+        # Save embeddings if available
+        if face_data_available:
+            for emb, quality in zip(result['embeddings'], result['quality_scores']):
+                create_student_embedding(
+                    student_id=student.id,
+                    embedding=emb,
+                    quality_score=quality
+                )
+
+        if face_data_available:
+            app.logger.info(f"Student registered: {student_id} ({name}) with {len(result['embeddings'])} embeddings")
+        else:
+            app.logger.info(f"Student registered: {student_id} ({name}) without facial data")
+
         # Enroll in selected courses
         enrolled_courses = []
         for course_id in selected_courses:
@@ -86,21 +109,32 @@ def self_register():
                 enrolled_courses.append(course_id)
             except Exception as e:
                 app.logger.warning(f"Failed to enroll in course {course_id}: {str(e)}")
-        
+
         db.session.commit()
-        
+
         app.logger.info(f"Student {student_id} enrolled in {len(enrolled_courses)} courses")
-        
-        return jsonify({
+
+        message = f'Registration successful! Enrolled in {len(enrolled_courses)} courses.'
+        if not face_data_available:
+            message += ' Note: Facial recognition not available - registered without face data.'
+
+        response_data = {
             'success': True,
-            'message': f'Registration successful! Enrolled in {len(enrolled_courses)} courses.',
+            'message': message,
             'student': student.to_dict(),
-            'embeddingsSaved': len(result['embeddings']),
             'coursesEnrolled': len(enrolled_courses),
-            'totalFrames': result['total_frames'],
-            'validFrames': result['valid_frames']
-        }), 201
-        
+            'faceDataAvailable': face_data_available
+        }
+
+        if face_data_available:
+            response_data.update({
+                'embeddingsSaved': len(result['embeddings']),
+                'totalFrames': result['total_frames'],
+                'validFrames': result['valid_frames']
+            })
+
+        return jsonify(response_data), 201
+
     except Exception as e:
         from app import app
         app.logger.error(f"Registration error: {str(e)}")

@@ -35,6 +35,7 @@ const EnhancedRecognition: React.FC = () => {
     const [reEntryAlert, setReEntryAlert] = useState(false);
 
     const recognitionInterval = useRef<number | null>(null);
+    const isProcessingFrame = useRef(false);
 
     useEffect(() => {
         startWebcam();
@@ -60,7 +61,7 @@ const EnhancedRecognition: React.FC = () => {
             setMessage('Camera ready. Click Start Recognition to begin.');
         } catch (error) {
             console.error('Error accessing webcam:', error);
-            setMessage('❌ Failed to access webcam');
+            setMessage('Failed to access webcam. Please allow permissions and try again.');
         }
     };
 
@@ -77,20 +78,29 @@ const EnhancedRecognition: React.FC = () => {
 
             if (response.data.active) {
                 setSession(response.data.session);
+            } else {
+                setMessage('No active session. Start a session to enable recognition.');
             }
         } catch (error) {
             console.error('Error fetching session:', error);
+            setMessage('Unable to load active session. Check the backend connection.');
         }
     };
 
     const startRecognition = () => {
+        if (isActive) return;
         if (!videoRef.current || !canvasRef.current) return;
+
+        if (!session) {
+            setMessage('No active session. Start a session to enable recognition.');
+            return;
+        }
 
         setIsActive(true);
         setState('detecting');
         setMessage('Scanning for faces...');
 
-        // Process frame every 200ms (5 FPS)
+        // Process frame every 200ms (5 FPS) without piling up requests
         recognitionInterval.current = window.setInterval(() => {
             processFrame();
         }, 200);
@@ -100,6 +110,7 @@ const EnhancedRecognition: React.FC = () => {
         setIsActive(false);
         setState('idle');
         setMessage('Recognition stopped');
+        isProcessingFrame.current = false;
 
         if (recognitionInterval.current) {
             clearInterval(recognitionInterval.current);
@@ -108,6 +119,7 @@ const EnhancedRecognition: React.FC = () => {
     };
 
     const processFrame = async () => {
+        if (!isActive || isProcessingFrame.current) return;
         if (!videoRef.current || !canvasRef.current) return;
 
         const canvas = canvasRef.current;
@@ -115,6 +127,8 @@ const EnhancedRecognition: React.FC = () => {
         const context = canvas.getContext('2d');
 
         if (!context) return;
+
+        isProcessingFrame.current = true;
 
         // Capture frame
         canvas.width = video.videoWidth;
@@ -174,7 +188,11 @@ const EnhancedRecognition: React.FC = () => {
             }
         } catch (error: any) {
             console.error('Recognition error:', error);
-            setMessage('Recognition error: ' + (error.response?.data?.error || error.message));
+            const reason = error.response?.data?.error || error.message || 'Network error';
+            setMessage(`Recognition error: ${reason}`);
+            stopRecognition();
+        } finally {
+            isProcessingFrame.current = false;
         }
     };
 
@@ -188,14 +206,14 @@ const EnhancedRecognition: React.FC = () => {
                             onClick={startRecognition}
                             className="px-6 py-2 bg-green-500 text-white rounded hover:bg-green-600"
                         >
-                            ▶️ Start Recognition
+                            Start Recognition
                         </button>
                     ) : (
                         <button
                             onClick={stopRecognition}
                             className="px-6 py-2 bg-red-500 text-white rounded hover:bg-red-600"
                         >
-                            ⏹️ Stop
+                            Stop
                         </button>
                     )}
                 </div>

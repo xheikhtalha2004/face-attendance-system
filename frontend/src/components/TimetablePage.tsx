@@ -1,6 +1,6 @@
 /**
  * Timetable Management Page
- * Weekly grid view for managing course schedule (5 slots × 5 days)
+ * Weekly grid view + course creation form
  */
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
@@ -48,6 +48,9 @@ export const TimetablePage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [editingSlot, setEditingSlot] = useState<{ day: string; slot: number } | null>(null);
   const [selectedCourse, setSelectedCourse] = useState<number | null>(null);
+  const [newCourse, setNewCourse] = useState({ courseId: '', courseName: '', professorName: '', description: '' });
+  const [savingCourse, setSavingCourse] = useState(false);
+  const [courseMessage, setCourseMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTimetable();
@@ -98,7 +101,6 @@ export const TimetablePage: React.FC = () => {
         }
       );
 
-      // Refresh timetable
       await fetchTimetable();
       setEditingSlot(null);
       setSelectedCourse(null);
@@ -120,20 +122,95 @@ export const TimetablePage: React.FC = () => {
     }
   };
 
+  const handleCreateCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCourse.courseId || !newCourse.courseName || !newCourse.professorName) {
+      setCourseMessage('Please fill course code, name, and professor.');
+      return;
+    }
+
+    setSavingCourse(true);
+    setCourseMessage(null);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/courses`, {
+        courseId: newCourse.courseId.trim(),
+        courseName: newCourse.courseName.trim(),
+        professorName: newCourse.professorName.trim(),
+        description: newCourse.description.trim() || undefined
+      });
+      setCourseMessage('Course added successfully.');
+      setNewCourse({ courseId: '', courseName: '', professorName: '', description: '' });
+      await fetchCourses();
+    } catch (error: any) {
+      console.error('Error creating course:', error);
+      setCourseMessage(error.response?.data?.error || 'Failed to add course');
+    } finally {
+      setSavingCourse(false);
+    }
+  };
+
   if (loading) {
     return <div className="flex items-center justify-center h-64">Loading timetable...</div>;
   }
 
   return (
     <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-6">
         <h1 className="text-3xl font-bold">Weekly Timetable</h1>
         <button
           onClick={fetchTimetable}
           className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
-          🔄 Refresh
+          Refresh
         </button>
+      </div>
+
+      {/* Course creator */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-100 p-4 mb-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-3">Add a Course</h3>
+        <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" onSubmit={handleCreateCourse}>
+          <input
+            type="text"
+            placeholder="Course Code (e.g., CS-101)"
+            value={newCourse.courseId}
+            onChange={(e) => setNewCourse({ ...newCourse, courseId: e.target.value })}
+            className="border rounded px-3 py-2"
+            required
+          />
+          <input
+            type="text"
+            placeholder="Course Name"
+            value={newCourse.courseName}
+            onChange={(e) => setNewCourse({ ...newCourse, courseName: e.target.value })}
+            className="border rounded px-3 py-2"
+            required
+          />
+          <input
+            type="text"
+            placeholder="Professor Name"
+            value={newCourse.professorName}
+            onChange={(e) => setNewCourse({ ...newCourse, professorName: e.target.value })}
+            className="border rounded px-3 py-2"
+            required
+          />
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Description (optional)"
+              value={newCourse.description}
+              onChange={(e) => setNewCourse({ ...newCourse, description: e.target.value })}
+              className="border rounded px-3 py-2 flex-1"
+            />
+            <button
+              type="submit"
+              disabled={savingCourse}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300"
+            >
+              {savingCourse ? 'Saving...' : 'Add'}
+            </button>
+          </div>
+        </form>
+        {courseMessage && <p className="text-sm mt-2 text-gray-700">{courseMessage}</p>}
       </div>
 
       {/* Timetable Grid */}
@@ -181,7 +258,7 @@ export const TimetablePage: React.FC = () => {
                             }}
                             className="text-xs text-red-500 hover:text-red-700"
                           >
-                            🗑️ Remove
+                            Remove
                           </button>
                         </div>
                       ) : (
@@ -247,9 +324,10 @@ export const TimetablePage: React.FC = () => {
       {/* Break Time Indicator */}
       <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
         <p className="text-sm text-yellow-800">
-          ☕ <strong>Break Time:</strong> 12:30 - 13:30 (60 minutes)
+          <strong>Break Time:</strong> 12:30 - 13:30 (60 minutes)
         </p>
       </div>
     </div>
   );
 };
+

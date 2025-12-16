@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import Navbar from './components/Navbar';
 import Dashboard from './components/Dashboard';
-import StudentRegistry from './components/StudentRegistry';
 import Reports from './components/Reports';
 import Home from './components/Home';
 import Settings from './components/Settings';
@@ -20,7 +19,7 @@ const MainLayout: React.FC = () => {
       case 'dashboard': return <Dashboard />;
       case 'registration': return <StudentRegistrationForm />;
       case 'recognition': return <EnhancedRecognition />;
-      case 'students': return <StudentRegistry />;
+      case 'students': return <StudentRegistrationForm />;
       case 'timetable': return <TimetablePage />;
       case 'attendance': return <SessionAttendanceTable autoRefresh={true} />;
       case 'reports': return <Reports />;
