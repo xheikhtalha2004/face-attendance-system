@@ -14,6 +14,7 @@ frontend/.env.local
 ml_cvs/__pycache__/
 ml_cvs/models/*.pth
 ml_cvs/models/*.h5
+ml_cvs/models/*.onnx
 ml_cvs/data/
 *.pyc
 

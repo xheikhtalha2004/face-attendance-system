@@ -21,33 +21,33 @@ try:
     with app.app_context():
         # Check students
         students = Student.query.all()
-        print(f"   ✓ Database accessible")
-        print(f"   ✓ Students in DB: {len(students)}")
-        
+        print(f"   [OK] Database accessible")
+        print(f"   [OK] Students in DB: {len(students)}")
+
         # Check courses
         courses = Course.query.all()
-        print(f"   ✓ Courses in DB: {len(courses)}")
+        print(f"   [OK] Courses in DB: {len(courses)}")
 except Exception as e:
-    print(f"   ❌ Database error: {e}")
+    print(f"   [ERROR] Database error: {e}")
 
 # Test 2: InsightFace
 print("\n2. Testing InsightFace...")
 try:
     from ml_cvs.face_engine import create_face_engine
     engine = create_face_engine(use_gpu=False)
-    print(f"   ✓ Face engine initialized")
-    print(f"   ✓ Models loaded: {list(engine.app.models.keys())}")
+    print(f"   [OK] Face engine initialized")
+    print(f"   [OK] Models loaded: {list(engine.app.models.keys())}")
 except Exception as e:
-    print(f"   ❌ InsightFace error: {e}")
+    print(f"   [ERROR] InsightFace error: {e}")
 
 # Test 3: Stabilizer
 print("\n3. Testing Stabilizer...")
 try:
     from ml_cvs.stabilizer import create_stabilizer
     stabilizer = create_stabilizer(k=5, n=10, cooldown=120)
-    print(f"   ✓ Stabilizer created (K=5, N=10)")
+    print(f"   [OK] Stabilizer created (K=5, N=10)")
 except Exception as e:
-    print(f"   ❌ Stabilizer error: {e}")
+    print(f"   [ERROR] Stabilizer error: {e}")
 
 # Test 4: API Blueprints
 print("\n4. Testing API Blueprints...")
@@ -59,8 +59,8 @@ try:
         if rule.endpoint not in ['static']:
             routes.append(f"{rule.rule} [{', '.join(rule.methods - {'HEAD', 'OPTIONS'})}]")
     
-    print(f"   ✓ Registered {len(routes)} API routes")
-    
+    print(f"   [OK] Registered {len(routes)} API routes")
+
     # Check key endpoints
     key_endpoints = [
         '/api/register/student',
@@ -68,21 +68,21 @@ try:
         '/api/sessions/<int:session_id>/finalize',
         '/api/sessions/<int:session_id>/export'
     ]
-    
+
     for endpoint in key_endpoints:
         found = any(endpoint.replace('<int:session_id>', str(1)) in route for route in routes)
         if found or any(endpoint.split('<')[0] in route for route in routes):
-            print(f"   ✓ {endpoint}")
+            print(f"   [OK] {endpoint}")
         else:
-            print(f"   ⚠ {endpoint} not found")
-            
+            print(f"   [WARN] {endpoint} not found")
+
 except Exception as e:
-    print(f"   ❌ API error: {e}")
+    print(f"   [ERROR] API error: {e}")
 
 print("\n" + "="*60)
 print("SUMMARY")
 print("="*60)
-print("✓ All core components initialized successfully!")
+print("[OK] All core components initialized successfully!")
 print("\nNext steps:")
 print("1. Start backend: python backend/app.py")
 print("2. Start frontend: cd frontend && npm run dev")

@@ -1,37 +1,42 @@
 """
-Face Detection Module
-Implements face detection using OpenCV (per SRDS specification)
+Face Detection Module - YuNet Only
+Uses OpenCV's YuNet DNN-based face detector (fast, accurate, no external dependencies)
 """
 import cv2
 import numpy as np
-from typing import List, Tuple, Optional
+import os
+from typing import List, Tuple, Optional, Dict
+from pathlib import Path
 
 
 class FaceDetector:
-    """Face detection using OpenCV Haar Cascades and HOG"""
+    """Face detection using YuNet DNN model only"""
     
-    def __init__(self, method='hog', min_face_size=20):
+    def __init__(self, min_face_size=40, score_threshold=0.9, nms_threshold=0.3, top_k=5000):
         """
-        Initialize face detector
+        Initialize YuNet face detector
         
         Args:
-            method: 'haar' or 'hog' detection method
-            min_face_size: Minimum face size to detect
+            min_face_size: Minimum face size to detect (pixels), default 40
+            score_threshold: Detection confidence threshold (0-1), default 0.9
+            nms_threshold: Non-maximum suppression threshold, default 0.3
+            top_k: Max detections before NMS, default 5000
         """
-        self.method = method
         self.min_face_size = min_face_size
+        self.score_threshold = score_threshold
+        self.nms_threshold = nms_threshold
+        self.top_k = top_k
+        self.yunet_detector = None
         
-        if method == 'haar':
-            # Load Haar Cascade classifier
-            cascade_path = cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
-            self.face_cascade = cv2.CascadeClassifier(cascade_path)
+        # Initialize YuNet detector
+        self._init_yunet()
     
     def detect_faces(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
         """
-        Detect faces in image
+        Detect faces in image using YuNet
         
         Args:
-            image: Input image (BGR or RGB format)
+            image: Input image (BGR format from OpenCV)
             
         Returns:
             List of face bounding boxes as (x, y, width, height)
@@ -39,16 +44,7 @@ class FaceDetector:
         if image is None or image.size == 0:
             return []
         
-        # Convert to grayscale for detection
-        if len(image.shape) == 3:
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray = image
-        
-        if self.method == 'haar':
-            faces = self._detect_haar(gray)
-        else:
-            faces = self._detect_hog(image)
+        faces = self._detect_yunet(image)
         
         # Filter by min face size
         filtered_faces = []
@@ -58,45 +54,78 @@ class FaceDetector:
         
         return filtered_faces
     
-    def _detect_haar(self, gray_image: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        """Detect faces using Haar Cascade"""
-        faces = self.face_cascade.detectMultiScale(
-            gray_image,
-            scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(self.min_face_size, self.min_face_size)
-        )
-        return [(int(x), int(y), int(w), int(h)) for (x, y, w, h) in faces]
-    
-    def _detect_hog(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        """Detect faces using HOG (via face_recognition library)"""
+    def _init_yunet(self):
+        """Initialize YuNet detector with model auto-download"""
         try:
-            import face_recognition
+            from ml_cvs.models.yunet_utils import get_yunet_model_path, check_yunet_compatibility
             
-            # Convert BGR to RGB if needed
-            if len(image.shape) == 3 and image.shape[2] == 3:
-                rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            else:
-                rgb_image = image
+            # Check OpenCV compatibility
+            if not check_yunet_compatibility():
+                raise RuntimeError("OpenCV version does not support YuNet (requires >= 4.8)")
             
-            # Detect faces
-            face_locations = face_recognition.face_locations(rgb_image, model='hog')
+            # Get model path (auto-download if needed)
+            model_path = get_yunet_model_path(auto_download=True)
+            if not model_path:
+                raise RuntimeError("Failed to obtain YuNet model file")
             
-            # Convert from (top, right, bottom, left) to (x, y, w, h)
-            faces = []
-            for (top, right, bottom, left) in face_locations:
-                x, y = left, top
-                w, h = right - left, bottom - top
-                faces.append((x, y, w, h))
+            # Create detector with initial input size (will be updated per frame)
+            self.yunet_detector = cv2.FaceDetectorYN.create(
+                model_path,
+                "",
+                (320, 320),
+                score_threshold=self.score_threshold,
+                nms_threshold=self.nms_threshold,
+                top_k=self.top_k
+            )
             
-            return faces
-        except ImportError:
-            print("Warning: face_recognition not available, falling back to Haar")
-            return self._detect_haar(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
+            print(f"[OK] YuNet detector initialized (score_threshold={self.score_threshold})")
+
+        except Exception as e:
+            print(f"[ERROR] Failed to initialize YuNet: {str(e)}")
+            raise
+    
+    def _detect_yunet(self, image: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """
+        Detect faces using YuNet DNN model
+        
+        Args:
+            image: Input image (BGR format)
+            
+        Returns:
+            List of face bounding boxes as (x, y, w, h)
+        """
+        if self.yunet_detector is None:
+            raise RuntimeError("YuNet detector not initialized")
+        
+        # Get image dimensions
+        height, width = image.shape[:2]
+        
+        # Update input size for this frame (YuNet needs this for accurate detection)
+        self.yunet_detector.setInputSize((width, height))
+        
+        # Detect faces
+        # Returns: None if no faces, or array with shape (num_faces, 15)
+        # Each row: [x, y, w, h, x_re, y_re, x_le, y_le, x_nt, y_nt, x_rcm, y_rcm, x_lcm, y_lcm, score]
+        # where re=right eye, le=left eye, nt=nose tip, rcm=right corner mouth, lcm=left corner mouth
+        _, faces_data = self.yunet_detector.detect(image)
+        
+        if faces_data is None:
+            return []
+        
+        # Extract bounding boxes and convert to (x, y, w, h)
+        faces = []
+        for face in faces_data:
+            x, y, w, h = face[:4]
+            # Convert to integers
+            x, y, w, h = int(x), int(y), int(w), int(h)
+            faces.append((x, y, w, h))
+        
+        return faces
     
     def get_face_locations(self, image: np.ndarray) -> List[dict]:
         """
         Get face locations with normalized coordinates
+        Includes confidence scores and landmarks for YuNet detector
         
         Returns:
             List of dicts with face location info
@@ -106,7 +135,7 @@ class FaceDetector:
         
         face_locations = []
         for i, (x, y, w, h) in enumerate(faces):
-            face_locations.append({
+            face_info = {
                 'index': i,
                 'box': {
                     'x': int(x),
@@ -120,7 +149,8 @@ class FaceDetector:
                     'width': w / width,
                     'height': h / height
                 }
-            })
+            }
+            face_locations.append(face_info)
         
         return face_locations
     
@@ -216,19 +246,18 @@ class FaceDetector:
         return quality
 
 
-def detect_faces(image: np.ndarray, method='hog', min_size=20) -> List[Tuple[int, int, int, int]]:
+def detect_faces(image: np.ndarray, min_size=20) -> List[Tuple[int, int, int, int]]:
     """
     Convenience function to detect faces
     
     Args:
         image: Input image
-        method: Detection method ('haar' or 'hog')
         min_size: Minimum face size
         
     Returns:
         List of face locations as (x, y, w, h)
     """
-    detector = FaceDetector(method=method, min_face_size=min_size)
+    detector = FaceDetector(min_face_size=min_size)
     return detector.detect_faces(image)
 
 

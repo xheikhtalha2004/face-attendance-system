@@ -12,7 +12,16 @@ USE_GPU = False  # Set True to use CUDA GPU (requires onnxruntime-gpu)
 # ============================================================================
 # Face Detection
 # ============================================================================
+FACE_DETECTOR_METHOD = 'yunet'  # Options: 'haar', 'hog', 'yunet' (recommended)
 MIN_FACE_SIZE = 80  # Minimum face width/height in pixels
+
+# YuNet Specific Parameters (only used when FACE_DETECTOR_METHOD='yunet')
+YUNET_SCORE_THRESHOLD = 0.9  # Detection confidence threshold (0-1, higher = stricter)
+YUNET_NMS_THRESHOLD = 0.3    # Non-maximum suppression (0-1, lower = fewer overlaps)
+YUNET_TOP_K = 5000           # Max detections before NMS
+YUNET_MODEL_PATH = None      # Auto-download to ml_cvs/models/ if None
+
+# Legacy detection size (for RetinaFace in face_engine.py)
 DETECTION_SIZE = (640, 640)  # RetinaFace detection resolution
 
 # ============================================================================

@@ -1,9 +1,3 @@
-"""
-Embedding Extractor Module
-Extract face embeddings using FaceNet/ArcFace approach (per SRDS specification)
-Option C: Uses face_recognition library (128D embeddings) for faster implementation
-Can be upgraded to custom FaceNet/ArcFace later
-"""
 import numpy as np
 import cv2
 from typing import List, Optional, Tuple

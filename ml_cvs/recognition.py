@@ -8,9 +8,9 @@ import numpy as np
 from typing import Optional, Dict, List, Tuple
 from datetime import datetime, timedelta
 
-from face_detection import FaceDetector
-from face_alignment import FaceAligner
-from embedding_extractor import EmbeddingExtractor
+from .face_detection import FaceDetector
+from .face_alignment import FaceAligner
+from .embedding_extractor import EmbeddingExtractor
 
 
 class FaceRecognizer:
@@ -24,7 +24,7 @@ class FaceRecognizer:
             confidence_threshold: Minimum confidence for recognition (0-1)
             duplicate_threshold_seconds: Prevent duplicate detections within this time
         """
-        self.detector = FaceDetector(method='hog')
+        self.detector = FaceDetector()
         self.aligner = FaceAligner(method='simple')
         self.extractor = EmbeddingExtractor()
         self.confidence_threshold = confidence_threshold

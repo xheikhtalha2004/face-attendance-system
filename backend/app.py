@@ -516,6 +516,174 @@ def recognize_face():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/test-recognition', methods=['POST'])
+def test_face_recognition():
+    """
+    Test face recognition against all students without session requirements.
+    Provides detailed debugging information about detection, matching, and similarity scores.
+    Uses YuNet detector + InsightFace embeddings (512D ArcFace).
+    """
+    try:
+        data = request.get_json()
+
+        if 'image' not in data:
+            return jsonify({'error': 'No image provided'}), 400
+
+        # Decode base64 image
+        import base64
+        img_data = data['image'].split(',')[1] if ',' in data['image'] else data['image']
+        img_bytes = base64.b64decode(img_data)
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if frame is None:
+            return jsonify({'error': 'Invalid image data'}), 400
+
+        # Initialize FaceEngine (uses InsightFace for embeddings, consistent with enrollment)
+        from ml_cvs.face_engine import FaceEngine
+        import pickle
+        face_engine = FaceEngine()
+
+        # Step 1: Detect faces
+        detection_start = datetime.now()
+        detected_faces = face_engine.detect_faces(frame)
+        detection_time = (datetime.now() - detection_start).total_seconds() * 1000
+
+        detection_info = {
+            'faces_detected': len(detected_faces),
+            'detection_time_ms': round(detection_time, 2),
+            'faces': []
+        }
+
+        if len(detected_faces) == 0:
+            return jsonify({
+                'success': False,
+                'message': 'No faces detected in image',
+                'detection': detection_info,
+                'embedding': None,
+                'matching': None
+            }), 200
+
+        if len(detected_faces) > 1:
+            detection_info['warning'] = f'Multiple faces detected ({len(detected_faces)}), using first face'
+
+        # Use first detected face
+        face_data = detected_faces[0]
+        bbox = face_data['bbox']
+        query_embedding = face_data['embedding']  # InsightFace embedding (512D)
+        
+        detection_info['faces'].append({
+            'x': int(bbox[0]),
+            'y': int(bbox[1]),
+            'width': int(bbox[2] - bbox[0]),
+            'height': int(bbox[3] - bbox[1])
+        })
+
+        embedding_info = {
+            'extraction_time_ms': round(detection_time, 2),  # Included in detection time
+            'embedding_shape': query_embedding.shape if hasattr(query_embedding, 'shape') else len(query_embedding)
+        }
+
+        # Step 2: Get all students with embeddings
+        from db_helpers import get_all_students_with_embeddings
+        students_data = get_all_students_with_embeddings()
+
+        if not students_data:
+            return jsonify({
+                'success': False,
+                'message': 'No students with embeddings found in database',
+                'detection': detection_info,
+                'embedding': embedding_info,
+                'matching': None
+            }), 200
+
+        # Step 3: Compare against all students
+        matching_start = datetime.now()
+        matching_results = []
+
+        for student in students_data:
+            student_id = student['student_id']
+            student_name = student['student_name']
+            student_embeddings = student['embeddings']
+
+            # Calculate similarities for all embeddings of this student
+            similarities = []
+            distances = []
+            for emb_bytes in student_embeddings:
+                try:
+                    known_embedding = pickle.loads(emb_bytes)  # Deserialize InsightFace embedding
+                    if known_embedding is not None:
+                        # Calculate cosine similarity (both embeddings should be 512D)
+                        similarity = face_engine.compare_embeddings_cosine(query_embedding, known_embedding)
+                        similarities.append(round(float(similarity), 4))
+                        # Use distance for additional info (1 - cosine_similarity)
+                        distances.append(round(float(1.0 - similarity), 4))
+                    else:
+                        similarities.append(0.0)
+                        distances.append(1.0)
+                except Exception as e:
+                    app.logger.warning(f"Error calculating similarity for student {student_id}: {str(e)}")
+                    similarities.append(0.0)
+                    distances.append(1.0)
+
+            # Use best similarity for this student
+            best_similarity = max(similarities) if similarities else 0.0
+            avg_similarity = sum(similarities) / len(similarities) if similarities else 0.0
+            best_distance = min(distances) if distances else 1.0
+
+            matching_results.append({
+                'student_id': student_id,
+                'student_name': student_name,
+                'similarities': similarities,
+                'distances': distances,
+                'best_similarity': round(best_similarity, 4),
+                'avg_similarity': round(avg_similarity, 4),
+                'best_distance': round(best_distance, 4) if best_distance != 1.0 else None,
+                'embedding_count': len(student_embeddings)
+            })
+
+        matching_time = (datetime.now() - matching_start).total_seconds() * 1000
+
+        # Sort by best similarity (descending)
+        matching_results.sort(key=lambda x: x['best_similarity'], reverse=True)
+
+        # Find best match
+        best_match = matching_results[0] if matching_results else None
+
+        matching_info = {
+            'total_students_tested': len(matching_results),
+            'matching_time_ms': round(matching_time, 2),
+            'results': matching_results,
+            'best_match': best_match
+        }
+
+        # Determine recognition result
+        confidence_threshold = float(get_settings().get('confidence_threshold', '0.6'))
+
+        recognition_result = {
+            'recognized': best_match and best_match['best_similarity'] >= confidence_threshold,
+            'student_id': best_match['student_id'] if best_match else None,
+            'student_name': best_match['student_name'] if best_match else None,
+            'confidence': best_match['best_similarity'] if best_match else 0.0,
+            'threshold_used': confidence_threshold
+        }
+
+        return jsonify({
+            'success': True,
+            'message': 'Face recognition test completed',
+            'recognition': recognition_result,
+            'detection': detection_info,
+            'embedding': embedding_info,
+            'matching': matching_info
+        }), 200
+
+    except Exception as e:
+        app.logger.error(f'Test recognition error: {str(e)}')
+        import traceback
+        app.logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
 # Global instances for face engine and stabilizer
 _face_engine = None
 _stabilizer = None

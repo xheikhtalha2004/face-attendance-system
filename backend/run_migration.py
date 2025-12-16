@@ -17,10 +17,10 @@ def run_migration(db_path, migration_file):
     try:
         cursor.executescript(sql_script)
         conn.commit()
-        print(f"✓ Migration applied: {migration_file}")
+        print(f"[OK] Migration applied: {migration_file}")
         return True
     except Exception as e:
-        print(f"✗ Migration failed: {migration_file}")
+        print(f"[ERROR] Migration failed: {migration_file}")
         print(f"Error: {str(e)}")
         conn.rollback()
         return False

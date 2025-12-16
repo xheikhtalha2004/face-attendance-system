@@ -58,6 +58,7 @@ class SessionSchedulerService:
         """
         Check current time against timetable and create sessions if needed
         Called every minute by scheduler
+        Only creates session once per slot per day
         """
         with self.app.app_context():
             try:
@@ -80,41 +81,45 @@ class SessionSchedulerService:
                     
                     # Create session if we're within first 2 minutes of slot start
                     if 0 <= time_diff <= 120:  # 0-2 minutes after start
-                        # Check if session already exists for today
-                        today_sessions = get_sessions_by_date(now.date())
+                        # Check if session already exists for this slot today
+                        from db import Session
                         
-                        # Check if this slot already has a session today
-                        slot_has_session = any(
-                            s.time_slot_id == slot.id and s.status in ['ACTIVE', 'SCHEDULED']
-                            for s in today_sessions
-                        )
+                        today_start = datetime.combine(now.date(), slot_start_time)
+                        today_end = datetime.combine(now.date(), slot_end_time)
                         
-                        if not slot_has_session:
-                            # Create auto session
-                            course = Course.query.get(slot.course_id)
+                        # Check for existing session for this time slot
+                        existing_session = Session.query.filter(
+                            Session.time_slot_id == slot.id,
+                            db.func.date(Session.starts_at) == now.date(),
+                            Session.status.in_(['ACTIVE', 'SCHEDULED'])
+                        ).first()
+                        
+                        if existing_session:
+                            logger.info(f"Session already exists for slot {slot.id} on {now.date()}")
+                            continue
+                        
+                        # Create auto session
+                        course = Course.query.get(slot.course_id)
+                        
+                        if course:
+                            session = create_session(
+                                course_id=slot.course_id,
+                                starts_at=today_start,
+                                ends_at=today_end,
+                                time_slot_id=slot.id,
+                                late_threshold_minutes=slot.late_threshold_minutes,
+                                auto_created=True,
+                                created_by=None
+                            )
                             
-                            if course:
-                                today_start = datetime.combine(now.date(), slot_start_time)
-                                today_end = datetime.combine(now.date(), slot_end_time)
-                                
-                                session = create_session(
-                                    course_id=slot.course_id,
-                                    starts_at=today_start,
-                                    ends_at=today_end,
-                                    time_slot_id=slot.id,
-                                    late_threshold_minutes=slot.late_threshold_minutes,
-                                    auto_created=True,
-                                    created_by=None
-                                )
-                                
-                                logger.info(f"Auto-created session for {course.course_name} "
-                                          f"at {slot.start_time} (Session ID: {session.id})")
-                                
-                                # Schedule absentee marking
-                                self._schedule_mark_absentees(
-                                    session.id,
-                                    today_start + timedelta(minutes=slot.late_threshold_minutes + 5)
-                                )
+                            logger.info(f"Auto-created session for {course.course_name} "
+                                      f"at {slot.start_time} (Session ID: {session.id})")
+                            
+                            # Schedule absentee marking
+                            self._schedule_mark_absentees(
+                                session.id,
+                                today_start + timedelta(minutes=slot.late_threshold_minutes + 5)
+                            )
             
             except Exception as e:
                 logger.error(f"Error in check_and_create_sessions: {str(e)}")

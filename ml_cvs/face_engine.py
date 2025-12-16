@@ -1,6 +1,6 @@
 """
-Face Engine using InsightFace (RetinaFace + ArcFace)
-Replaces previous face_recognition library with production-grade accuracy
+Face Engine using YuNet (detection) + InsightFace ArcFace (embeddings)
+YuNet provides superior face detection, ArcFace provides best-in-class embeddings
 """
 import numpy as np
 import cv2
@@ -15,38 +15,56 @@ ARC_SIMILARITY_THRESHOLD = 0.35  # Cosine similarity threshold (0.30-0.45 range)
 
 class FaceEngine:
     """
-    Unified face detection + embedding extraction using InsightFace
-    Uses RetinaFace for detection and ArcFace for embeddings
+    Hybrid face engine:
+    - YuNet for fast, accurate face detection
+    - InsightFace ArcFace for high-quality embeddings
     """
     
     def __init__(self, model_name='buffalo_l', ctx_id=-1):
         """
-        Initialize InsightFace model (works with 0.2.1 API)
+        Initialize Face Engine with YuNet detection + InsightFace embeddings
+        
         Args:
-            model_name: Model to use ('buffalo_l' is default, high accuracy)
+            model_name: InsightFace model for embeddings ('buffalo_l' recommended)
             ctx_id: Device ID (-1 for CPU, 0+ for GPU)
         """
         self.model_name = model_name
         self.ctx_id = ctx_id
         
-        print(f"Initializing InsightFace with model: {model_name}...")
+        print(f"Initializing Face Engine...")
+        print(f"  Detection: YuNet (DNN)")
+        print(f"  Embeddings: InsightFace ArcFace ({model_name})")
         
+        # Initialize YuNet detector
         try:
-            # Initialize FaceAnalysis (0.2.1 API)
+            from ml_cvs.face_detection import FaceDetector
+            from ml_cvs.config import YUNET_SCORE_THRESHOLD, MIN_FACE_SIZE
+            
+            self.yunet_detector = FaceDetector(
+                min_face_size=MIN_FACE_SIZE,
+                score_threshold=YUNET_SCORE_THRESHOLD
+            )
+            print(f"  [OK] YuNet detector initialized")
+        except Exception as e:
+            print(f"  [ERROR] YuNet initialization failed: {e}")
+            raise
+
+        # Initialize InsightFace for embeddings
+        try:
             self.app = FaceAnalysis(name=model_name)
             self.app.prepare(ctx_id=ctx_id, det_size=(640, 640))
-            
-            print(f"[OK] InsightFace initialized ({model_name})")
-            print(f"[OK] Using {'GPU' if ctx_id >= 0 else 'CPU'}")
+
+            print(f"  [OK] InsightFace initialized ({model_name})")
+            print(f"  [OK] Using {'GPU' if ctx_id >= 0 else 'CPU'}")
         except Exception as e:
-            print(f"Error initializing InsightFace: {str(e)}")
+            print(f"  [ERROR] Error initializing InsightFace: {str(e)}")
             raise
         
-        print("[OK] InsightFace initialized successfully")
+        print("[OK] Face Engine ready")
     
     def detect_faces(self, frame: np.ndarray) -> List[Dict]:
         """
-        Detect faces in frame using RetinaFace
+        Detect faces in frame using YuNet, then extract embeddings with InsightFace
         
         Args:
             frame: Input image (BGR format from OpenCV)
@@ -54,37 +72,64 @@ class FaceEngine:
         Returns:
             List of face dictionaries with:
                 - bbox: (x, y, w, h) bounding box
-                - kps: 5-point facial landmarks 
+                - kps: None (YuNet doesn't provide landmarks in standard way)
                 - det_score: detection confidence (0-1)
-                - embedding: 512D ArcFace embedding (if extracted)
+                - embedding: 512D ArcFace embedding
         """
         if frame is None or frame.size == 0:
             return []
         
-        # Convert BGR to RGB (InsightFace expects RGB)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Detect faces with YuNet
+        face_bboxes = self.yunet_detector.detect_faces(frame)
         
-        # Detect and analyze faces
-        faces = self.app.get(rgb_frame)
+        if not face_bboxes:
+            return []
         
-        # Convert to our format
+        # Extract embeddings for each detected face
         result = []
-        for face in faces:
-            # Convert bbox from (left, top, right, bottom) to (x, y, w, h)
-            left, top, right, bottom = face.bbox.astype(int)
-            x, y = left, top
-            w, h = right - left, bottom - top
+        for bbox in face_bboxes:
+            x, y, w, h = bbox
+            
+            # Extract face crop with padding
+            face_crop = extract_crop_from_bbox(frame, bbox, padding=0.2)
+            if face_crop is None:
+                continue
+            
+            # Get embedding from InsightFace
+            embedding = self._extract_embedding_from_crop(face_crop)
+            if embedding is None:
+                continue
             
             face_dict = {
                 'bbox': (x, y, w, h),
-                'kps': face.kps,  # 5-point landmarks: [[left_eye], [right_eye], [nose], [left_mouth], [right_mouth]]
-                'det_score': float(face.det_score),  # Detection confidence
-                'embedding': face.embedding  # 512D normalized embedding
+                'kps': None,
+                'det_score': 0.95,
+                'embedding': embedding
             }
             
             result.append(face_dict)
         
         return result
+    
+    
+    def _extract_embedding_from_crop(self, face_crop: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Extract ArcFace embedding from face crop using InsightFace
+        """
+        if face_crop is None or face_crop.size == 0:
+            return None
+        
+        # Convert BGR to RGB
+        rgb_crop = cv2.cvtColor(face_crop, cv2.COLOR_BGR2RGB)
+        
+        # Get embedding using InsightFace
+        faces = self.app.get(rgb_crop)
+        
+        if not faces:
+            return None
+        
+        # Return embedding of first (should be only) face
+        return faces[0].embedding
     
     def get_embedding(self, face_crop: np.ndarray) -> Optional[np.ndarray]:
         """
@@ -96,17 +141,7 @@ class FaceEngine:
         Returns:
             512D normalized embedding vector or None if no face detected
         """
-        if face_crop is None or face_crop.size == 0:
-            return None
-        
-        # Detect face in crop
-        faces = self.detect_faces(face_crop)
-        
-        if not faces:
-            return None
-        
-        # Return embedding of first (largest) face
-        return faces[0]['embedding']
+        return self._extract_embedding_from_crop(face_crop)
     
     def compare_embeddings_cosine(self, emb1: np.ndarray, emb2: np.ndarray) -> float:
         """
@@ -118,15 +153,25 @@ class FaceEngine:
             
         Returns:
             Cosine similarity (0-1, higher = more similar)
-            ArcFace embeddings are already normalized, so this is just dot product
         """
         if emb1 is None or emb2 is None:
             return 0.0
         
-        # Cosine similarity (embeddings are already L2-normalized)
-        similarity = np.dot(emb1, emb2)
+        # Ensure numpy arrays
+        emb1 = np.asarray(emb1, dtype=np.float32)
+        emb2 = np.asarray(emb2, dtype=np.float32)
         
-        # Clamp to [0, 1] range (should already be, but just in case)
+        # Compute L2 norms
+        norm1 = np.linalg.norm(emb1)
+        norm2 = np.linalg.norm(emb2)
+        
+        if norm1 == 0 or norm2 == 0:
+            return 0.0
+        
+        # Cosine similarity: dot(u, v) / (norm(u) * norm(v))
+        similarity = np.dot(emb1, emb2) / (norm1 * norm2)
+        
+        # Clamp to [0, 1] range
         similarity = np.clip(similarity, 0.0, 1.0)
         
         return float(similarity)
@@ -173,7 +218,13 @@ class FaceEngine:
 
 # Convenience functions
 def create_face_engine(model_name=INSIGHTFACE_MODEL, use_gpu=False):
-    """Create and return FaceEngine instance"""
+    """
+    Create and return FaceEngine instance
+    
+    Args:
+        model_name: InsightFace model name
+        use_gpu: Use GPU for processing (True for GPU, False for CPU)
+    """
     ctx_id = 0 if use_gpu else -1
     return FaceEngine(model_name=model_name, ctx_id=ctx_id)
 

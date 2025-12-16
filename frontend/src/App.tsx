@@ -8,6 +8,7 @@ import { TimetablePage } from './components/TimetablePage';
 import EnhancedRecognition from './components/EnhancedRecognition';
 import { SessionAttendanceTable } from './components/SessionAttendanceTable';
 import { StudentRegistrationForm } from './components/StudentRegistrationForm';
+import TestingPanel from './components/TestingPanel';
 import { AppProvider } from './context/AppContext';
 
 const MainLayout: React.FC = () => {
@@ -24,6 +25,7 @@ const MainLayout: React.FC = () => {
       case 'attendance': return <SessionAttendanceTable autoRefresh={true} />;
       case 'reports': return <Reports />;
       case 'settings': return <Settings />;
+      case 'testing': return <TestingPanel />;
       default: return <Home onNavigate={setCurrentView} />;
     }
   };
