@@ -132,18 +132,30 @@ export const TimetablePage: React.FC = () => {
     setSavingCourse(true);
     setCourseMessage(null);
     try {
+      console.log('Sending course data:', {
+        courseId: newCourse.courseId.trim(),
+        courseName: newCourse.courseName.trim(),
+        professorName: newCourse.professorName.trim(),
+        description: newCourse.description.trim() || undefined
+      });
+      
       const response = await axios.post(`${API_BASE_URL}/courses`, {
         courseId: newCourse.courseId.trim(),
         courseName: newCourse.courseName.trim(),
         professorName: newCourse.professorName.trim(),
         description: newCourse.description.trim() || undefined
       });
+      
+      console.log('Course creation response:', response.data);
       setCourseMessage('Course added successfully.');
       setNewCourse({ courseId: '', courseName: '', professorName: '', description: '' });
       await fetchCourses();
     } catch (error: any) {
       console.error('Error creating course:', error);
-      setCourseMessage(error.response?.data?.error || 'Failed to add course');
+      console.error('Response status:', error.response?.status);
+      console.error('Response data:', error.response?.data);
+      console.error('Error message:', error.message);
+      setCourseMessage(error.response?.data?.error || error.message || 'Failed to add course');
     } finally {
       setSavingCourse(false);
     }

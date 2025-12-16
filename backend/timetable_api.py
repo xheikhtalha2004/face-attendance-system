@@ -154,8 +154,17 @@ def create_update_time_slot():
         end_time = data.get('endTime')
         late_threshold_minutes = data.get('lateThresholdMinutes', 5)
         
+        print(f'DEBUG: Received slot data: day={day_of_week}, slot={slot_number}, course_id={course_id}')
+        
         if not all([day_of_week, slot_number, course_id, start_time, end_time]):
             return jsonify({'error': 'Missing required fields'}), 400
+        
+        # Validate that course exists
+        from db_helpers import get_course_by_id
+        course = get_course_by_id(course_id)
+        print(f'DEBUG: Looking up course {course_id}: {course}')
+        if not course:
+            return jsonify({'error': f'Course with ID {course_id} not found'}), 404
         
         slot = create_or_update_time_slot(
             day_of_week=day_of_week,
@@ -166,13 +175,21 @@ def create_update_time_slot():
             late_threshold_minutes=late_threshold_minutes
         )
         
+        print(f'DEBUG: Slot saved successfully: {slot.to_dict()}')
+        
         return jsonify({
             'message': 'Time slot saved successfully',
             'slot': slot.to_dict()
         }), 200
         
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        import traceback
+        print(f'ERROR in create_update_time_slot: {str(e)}')
+        print(traceback.format_exc())
+        from app import app as flask_app
+        flask_app.logger.error(f'Slot creation error: {str(e)}')
+        flask_app.logger.error(traceback.format_exc())
+        return jsonify({'error': f'Database error: {str(e)}'}), 500
 
 
 @timetable_bp.route('/timetable/slots/<int:slot_id>', methods=['DELETE'])
