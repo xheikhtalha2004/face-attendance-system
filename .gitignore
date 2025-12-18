@@ -4,6 +4,13 @@ backend/uploads/*
 !backend/uploads/.gitkeep
 backend/*.db
 backend/.env
+backend/instance/
+backend/migrations/__pycache__/
+instance/
+uploads/
+*.db
+*.sqlite
+.env
 
 # Frontend
 frontend/node_modules/
@@ -32,3 +39,4 @@ Thumbs.db
 venv/
 *.egg-info/
 __pycache__/
+tests/__pycache__/

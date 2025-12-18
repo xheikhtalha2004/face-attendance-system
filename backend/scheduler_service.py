@@ -10,7 +10,7 @@ import pytz
 
 # Import DB functions
 from db import (
-    db, Session, TimeSlot, Course, Attendance, Student,
+    db, Session, TimeSlot, Course, Attendance, Student, Enrollment,
     get_active_slots_for_day, create_session, 
     get_sessions_by_date, mark_students_absent,
     get_attendance_by_session
@@ -45,6 +45,14 @@ class SessionSchedulerService:
             'interval',
             minutes=1,
             id='session_checker',
+            replace_existing=True
+        )
+        # Activate any scheduled sessions that have reached their start time
+        self.scheduler.add_job(
+            self.activate_due_sessions,
+            'interval',
+            minutes=1,
+            id='session_auto_activate',
             replace_existing=True
         )
         logger.info("Session checker scheduled (every 1 minute)")
@@ -144,6 +152,28 @@ class SessionSchedulerService:
             logger.info(f"Scheduled absentee marking for session {session_id} at {run_time}")
         except Exception as e:
             logger.error(f"Error scheduling absentee marking: {str(e)}")
+
+    def activate_due_sessions(self):
+        """Auto-activate scheduled sessions that have reached their start time"""
+        with self.app.app_context():
+            try:
+                now = datetime.utcnow()
+                due_sessions = Session.query.filter(
+                    Session.status == 'SCHEDULED',
+                    Session.starts_at <= now,
+                    Session.ends_at > now
+                ).all()
+
+                activated = 0
+                for session in due_sessions:
+                    session.status = 'ACTIVE'
+                    activated += 1
+
+                if activated:
+                    db.session.commit()
+                    logger.info(f"Auto-activated {activated} scheduled session(s)")
+            except Exception as e:
+                logger.error(f"Error auto-activating sessions: {str(e)}")
     
     def mark_absentees_for_session(self, session_id):
         """
@@ -159,16 +189,16 @@ class SessionSchedulerService:
                     logger.warning(f"Session {session_id} not found")
                     return
                 
-                # Get all active students
-                all_students = Student.query.filter_by(status='Active').all()
-                all_student_ids = [s.id for s in all_students]
+                # Get enrolled students for the course
+                enrolled = Enrollment.query.filter_by(course_id=session.course_id).all()
+                enrolled_ids = [e.student_id for e in enrolled]
                 
                 # Get students with attendance in this session
                 attendance_records = get_attendance_by_session(session_id)
                 present_student_ids = set(a.student_id_fk for a in attendance_records)
                 
                 # Find absent students
-                absent_student_ids = [sid for sid in all_student_ids if sid not in present_student_ids]
+                absent_student_ids = [sid for sid in enrolled_ids if sid not in present_student_ids]
                 
                 # Mark them absent
                 if absent_student_ids:

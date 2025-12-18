@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 import cv2
 import numpy as np
 from dotenv import load_dotenv
+from sqlalchemy.exc import IntegrityError
 
 # Add ml_cvs to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -21,7 +22,7 @@ from db import (
     db, init_db, Student, Attendance,
     get_all_students, get_student_by_id, create_student, update_student, delete_student,
     get_all_attendance, create_attendance, get_student_attendance_today,
-    get_all_face_encodings, get_settings, update_setting
+    get_all_face_encodings, get_settings, update_setting, get_student_by_student_id
 )
 
 # Load environment variables
@@ -124,6 +125,10 @@ def register_student():
         
         if not all([name, student_id]):
             return jsonify({'error': 'Missing required fields'}), 400
+
+        # Prevent duplicate roll numbers before any processing
+        if get_student_by_student_id(student_id):
+            return jsonify({'error': f'Student ID {student_id} already exists'}), 409
         
         # Check for photo
         if 'photo' not in request.files:
@@ -180,6 +185,10 @@ def register_student():
             'student': student.to_dict()
         }), 201
         
+    except IntegrityError as ie:
+        db.session.rollback()
+        app.logger.error(f"Constraint violation during registration: {str(ie)}")
+        return jsonify({'error': 'Student already exists or data constraint failed'}), 409
     except Exception as e:
         app.logger.error(f"Error registering student: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -267,6 +276,11 @@ def update_student_info(student_id):
 def delete_student_record(student_id):
     """Delete student"""
     try:
+        from db import Attendance
+
+        if Attendance.query.filter_by(student_id_fk=student_id).first():
+            return jsonify({'error': 'Cannot delete student with existing attendance records'}), 409
+
         success = delete_student(student_id)
         
         if not success:
@@ -431,6 +445,18 @@ def recognize_face():
             
             # Check if already marked
             from db import Attendance, ReEntryLog
+            enrollment = Enrollment.query.filter_by(
+                student_id=sid,
+                course_id=active_session.course_id
+            ).first()
+            if not enrollment:
+                app.logger.warning(f"Recognition matched student {sid} not enrolled in course {active_session.course_id}")
+                return jsonify({
+                    'recognized': False,
+                    'message': 'Student recognized but not enrolled in this course',
+                    'studentId': sid
+                }), 403
+
             existing = Attendance.query.filter_by(
                 session_id=active_session.id,
                 student_id_fk=sid
@@ -702,17 +728,42 @@ def mark_attendance_manual():
         data = request.get_json()
         
         student_id = data.get('studentId')
-        status = data.get('status', 'Present')
+        session_id = data.get('sessionId')
+        status = data.get('status', 'PRESENT')
         notes = data.get('notes')
         
-        if not student_id:
-            return jsonify({'error': 'Student ID required'}), 400
-        
-        # Create attendance
-        attendance = create_attendance(
-            student_id=int(student_id),
-            status=status,
-            method='manual',
+        if not student_id or not session_id:
+            return jsonify({'error': 'studentId and sessionId are required'}), 400
+
+        from db import Session, Student, Enrollment, upsert_attendance
+
+        session = Session.query.get(int(session_id))
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        if session.status != 'ACTIVE':
+            return jsonify({'error': 'Session is not active'}), 409
+
+        student = Student.query.get(int(student_id))
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+
+        # Ensure student is enrolled in the course for the session
+        enrollment = Enrollment.query.filter_by(
+            student_id=student.id,
+            course_id=session.course_id
+        ).first()
+        if not enrollment:
+            return jsonify({'error': 'Student is not enrolled in this course'}), 409
+
+        normalized_status = status.upper()
+        if normalized_status not in ['PRESENT', 'LATE', 'ABSENT']:
+            return jsonify({'error': 'Invalid status. Use PRESENT, LATE, or ABSENT'}), 400
+
+        attendance = upsert_attendance(
+            session_id=session.id,
+            student_id=student.id,
+            status=normalized_status,
+            method='MANUAL',
             notes=notes
         )
         

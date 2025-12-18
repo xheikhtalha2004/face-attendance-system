@@ -3,6 +3,7 @@ Database models and operations for Face Attendance System
 Uses SQLAlchemy ORM for database management
 """
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import text
 from datetime import datetime
 import json
 
@@ -187,6 +188,7 @@ class Session(db.Model):
     status = db.Column(db.String(20), default='ACTIVE')  # SCHEDULED, ACTIVE, COMPLETED, CANCELLED
     auto_created = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
     
     # Relationships
     attendance_records = db.relationship('Attendance', backref='session', lazy=True, cascade='all, delete-orphan')
@@ -203,7 +205,8 @@ class Session(db.Model):
             'lateThresholdMinutes': self.late_threshold_minutes,
             'status': self.status,
             'autoCreated': self.auto_created,
-            'createdAt': self.created_at.isoformat()
+            'createdAt': self.created_at.isoformat(),
+            'notes': self.notes
         }
 
 
@@ -286,6 +289,41 @@ def init_db(app):
     
     with app.app_context():
         db.create_all()
+
+        def _ensure_notes_column():
+            """Add/rename notes column safely (handles prior bad 'TEXT' column)."""
+            info = db.session.execute(text("PRAGMA table_info('sessions')")).mappings().all()
+            column_names = {row['name'] for row in info}
+
+            # If an accidental column named "TEXT" exists, rename it to notes
+            if 'notes' not in column_names and 'TEXT' in column_names:
+                try:
+                    db.session.execute(text('ALTER TABLE sessions RENAME COLUMN "TEXT" TO notes'))
+                    column_names.add('notes')
+                    column_names.discard('TEXT')
+                except Exception:
+                    # If rename fails, fall back to adding the correct column (will be ignored if it now exists)
+                    pass
+
+            if 'notes' not in column_names:
+                db.session.execute(text("ALTER TABLE sessions ADD COLUMN notes TEXT"))
+
+        def _ensure_index(name, table, expr):
+            """Create index if it does not exist (SQLite-friendly)."""
+            db.session.execute(text(
+                f"CREATE INDEX IF NOT EXISTS {name} ON {table}({expr})"
+            ))
+
+        # Backfill new columns for existing databases
+        _ensure_notes_column()
+
+        # Backfill performance indexes for upgraded installs
+        _ensure_index('idx_session_status', 'sessions', 'status')
+        _ensure_index('idx_session_starts_at', 'sessions', 'starts_at')
+        _ensure_index('idx_attendance_session_student', 'attendance', 'session_id, student_id_fk')
+        _ensure_index('idx_attendance_checkin', 'attendance', 'check_in_time')
+        _ensure_index('idx_enrollment_course', 'enrollments', 'course_id')
+        db.session.commit()
         
         # Create default settings if not exist
         default_settings = {
@@ -432,6 +470,14 @@ def update_setting(key, value):
     
     db.session.commit()
     return setting
+
+
+# Indexes to speed up common lookups
+db.Index('idx_session_status', Session.status)
+db.Index('idx_session_starts_at', Session.starts_at)
+db.Index('idx_attendance_session_student', Attendance.session_id, Attendance.student_id_fk)
+db.Index('idx_attendance_checkin', Attendance.check_in_time)
+db.Index('idx_enrollment_course', Enrollment.course_id)
 
 
 # Import helper functions from sibling module (works when running from backend/)

@@ -147,17 +147,26 @@ def get_active_slots_for_day(day_of_week):
 
 
 # Session Management
+def determine_initial_status(starts_at, activation_window_minutes=5):
+    """Return ACTIVE if start is now/within window, else SCHEDULED"""
+    now = datetime.utcnow()
+    return 'ACTIVE' if starts_at <= now + timedelta(minutes=activation_window_minutes) else 'SCHEDULED'
+
+
 def create_session(course_id, starts_at, ends_at, time_slot_id=None,
-                  late_threshold_minutes=5, auto_created=False, created_by=None):
-    """Create new session"""
+                  late_threshold_minutes=5, auto_created=False, created_by=None, status=None):
+    """Create new session with smarter default status handling"""
     from db import db, Session
+
+    initial_status = status or determine_initial_status(starts_at)
+
     session = Session(
         course_id=course_id,
         time_slot_id=time_slot_id,
         starts_at=starts_at,
         ends_at=ends_at,
         late_threshold_minutes=late_threshold_minutes,
-        status='ACTIVE',
+        status=initial_status,
         auto_created=auto_created
     )
     db.session.add(session)
@@ -171,10 +180,19 @@ def get_session_by_id(session_id):
     return Session.query.get(session_id)
 
 
-def get_active_session():
-    """Get currently active session"""
+def get_active_session(include_stale=False):
+    """Get currently active session (optionally include stale ones past end time)"""
     from db import Session
-    return Session.query.filter_by(status='ACTIVE').first()
+    query = Session.query.filter_by(status='ACTIVE')
+
+    if not include_stale:
+        now = datetime.utcnow()
+        query = query.filter(
+            Session.starts_at <= now,
+            Session.ends_at >= now
+        )
+
+    return query.order_by(Session.starts_at.asc()).first()
 
 
 def get_sessions_by_date(date):

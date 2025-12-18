@@ -27,6 +27,14 @@ from db import (
 timetable_bp = Blueprint('timetable', __name__, url_prefix='/api')
 
 
+def _parse_time_str(value):
+    """Validate and parse HH:MM values"""
+    try:
+        return datetime.strptime(value, '%H:%M').time()
+    except Exception:
+        return None
+
+
 # ============================================================================
 # COURSE ENDPOINTS
 # ============================================================================
@@ -100,6 +108,18 @@ def update_course_endpoint(course_id):
 def delete_course_endpoint(course_id):
     """Delete course"""
     try:
+        from db import Enrollment, Session as SessionModel
+
+        if Enrollment.query.filter_by(course_id=course_id).first():
+            return jsonify({'error': 'Cannot delete course with enrolled students'}), 409
+
+        active_or_scheduled = SessionModel.query.filter(
+            SessionModel.course_id == course_id,
+            SessionModel.status.in_(['ACTIVE', 'SCHEDULED'])
+        ).first()
+        if active_or_scheduled:
+            return jsonify({'error': 'Cannot delete course with active or scheduled sessions'}), 409
+
         success = delete_course(course_id)
         
         if not success:
@@ -158,6 +178,13 @@ def create_update_time_slot():
         
         if not all([day_of_week, slot_number, course_id, start_time, end_time]):
             return jsonify({'error': 'Missing required fields'}), 400
+
+        start_time_obj = _parse_time_str(start_time)
+        end_time_obj = _parse_time_str(end_time)
+        if not start_time_obj or not end_time_obj:
+            return jsonify({'error': 'Invalid time format. Use HH:MM'}), 400
+        if end_time_obj <= start_time_obj:
+            return jsonify({'error': 'End time must be after start time'}), 400
         
         # Validate that course exists
         from db_helpers import get_course_by_id
@@ -165,6 +192,25 @@ def create_update_time_slot():
         print(f'DEBUG: Looking up course {course_id}: {course}')
         if not course:
             return jsonify({'error': f'Course with ID {course_id} not found'}), 404
+
+        # Check for overlapping slots on the same day (excluding current slot if updating)
+        from db import TimeSlot
+        existing_slot = get_time_slot_by_day_slot(day_of_week, slot_number)
+        existing_id = existing_slot.id if existing_slot else None
+
+        day_slots = TimeSlot.query.filter(
+            TimeSlot.day_of_week == day_of_week,
+            TimeSlot.id != existing_id
+        ).all()
+
+        for other in day_slots:
+            other_start = _parse_time_str(other.start_time)
+            other_end = _parse_time_str(other.end_time)
+            if other_start and other_end and start_time_obj < other_end and end_time_obj > other_start:
+                return jsonify({
+                    'error': 'Time slot overlaps with another slot on this day',
+                    'conflictSlotId': other.id
+                }), 409
         
         slot = create_or_update_time_slot(
             day_of_week=day_of_week,
@@ -196,6 +242,16 @@ def create_update_time_slot():
 def delete_time_slot_endpoint(slot_id):
     """Delete time slot"""
     try:
+        from db import Session as SessionModel, TimeSlot
+
+        slot = TimeSlot.query.get(slot_id)
+        if not slot:
+            return jsonify({'error': 'Time slot not found'}), 404
+
+        active_session = SessionModel.query.filter_by(time_slot_id=slot_id).first()
+        if active_session:
+            return jsonify({'error': 'Cannot delete time slot with existing sessions'}), 409
+
         success = delete_time_slot(slot_id)
         
         if not success:
@@ -218,12 +274,43 @@ def create_session_endpoint():
         data = request.get_json()
 
         course_id = data.get('courseId')
-        starts_at = datetime.fromisoformat(data.get('startsAt'))
-        ends_at = datetime.fromisoformat(data.get('endsAt'))
+        try:
+            starts_at = datetime.fromisoformat(data.get('startsAt'))
+            ends_at = datetime.fromisoformat(data.get('endsAt'))
+        except Exception:
+            return jsonify({'error': 'Invalid datetime format. Use ISO 8601 (e.g., 2025-12-17T10:00:00)'}), 400
+
+        if starts_at.tzinfo:
+            starts_at = starts_at.replace(tzinfo=None)
+        if ends_at.tzinfo:
+            ends_at = ends_at.replace(tzinfo=None)
+
         late_threshold_minutes = data.get('lateThresholdMinutes', 5)
 
         if not all([course_id, starts_at, ends_at]):
             return jsonify({'error': 'Missing required fields'}), 400
+
+        if ends_at <= starts_at:
+            return jsonify({'error': 'End time must be after start time'}), 400
+
+        if ends_at <= datetime.utcnow():
+            return jsonify({'error': 'End time cannot be in the past'}), 400
+
+        # Prevent overlapping active sessions
+        from db import Session as SessionModel
+        conflict = SessionModel.query.filter(
+            SessionModel.status == 'ACTIVE',
+            SessionModel.starts_at < ends_at,
+            SessionModel.ends_at > starts_at
+        ).first()
+        if conflict:
+            return jsonify({
+                'error': 'Another active session overlaps with this time window',
+                'conflictSessionId': conflict.id
+            }), 409
+
+        from db_helpers import determine_initial_status
+        initial_status = determine_initial_status(starts_at)
 
         session = create_session(
             course_id=course_id,
@@ -231,11 +318,12 @@ def create_session_endpoint():
             ends_at=ends_at,
             late_threshold_minutes=late_threshold_minutes,
             auto_created=False,
-            created_by=None
+            created_by=None,
+            status=initial_status
         )
         
         return jsonify({
-            'message': 'Session created successfully',
+            'message': f"Session {'activated' if initial_status == 'ACTIVE' else 'scheduled'} successfully",
             'session': session.to_dict()
         }), 201
         

@@ -3,7 +3,7 @@ Session Management API Endpoints
 Manual session creation, ending, and verification with timestamps
 """
 from flask import Blueprint, request, jsonify
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 session_mgmt_bp = Blueprint('session_management', __name__, url_prefix='/api/sessions')
 
@@ -70,6 +70,7 @@ def create_manual_session():
     """Create a manual session (not auto-generated)"""
     try:
         from db import db, Session, Course
+        from db_helpers import determine_initial_status
         
         data = request.get_json()
         
@@ -92,10 +93,42 @@ def create_manual_session():
             ends_at = datetime.fromisoformat(ends_at_str.replace('Z', '+00:00'))
         except ValueError:
             return jsonify({'error': 'Invalid datetime format. Use ISO format (e.g., 2025-12-17T10:00:00)'}), 400
-        
+
+        # Normalize to naive UTC for consistent comparisons
+        if starts_at.tzinfo:
+            starts_at = starts_at.astimezone(timezone.utc).replace(tzinfo=None)
+        if ends_at.tzinfo:
+            ends_at = ends_at.astimezone(timezone.utc).replace(tzinfo=None)
+
+        now = datetime.utcnow()
+
         # Validate time logic
         if ends_at <= starts_at:
             return jsonify({'error': 'End time must be after start time'}), 400
+        if ends_at <= now:
+            return jsonify({'error': 'End time cannot be in the past'}), 400
+
+        # Determine intended status (ACTIVE if start is now/past/within 5 minutes)
+        status = determine_initial_status(starts_at)
+
+        # Prevent overlapping sessions (active now or scheduled within the same window)
+        conflicting_statuses = ['ACTIVE'] if status == 'ACTIVE' else ['ACTIVE', 'SCHEDULED']
+        overlap = Session.query.filter(
+            Session.status.in_(conflicting_statuses),
+            Session.starts_at < ends_at,
+            Session.ends_at > starts_at
+        ).first()
+
+        if overlap:
+            return jsonify({
+                'error': 'Conflicting session exists',
+                'details': {
+                    'sessionId': overlap.id,
+                    'status': overlap.status,
+                    'startsAt': overlap.starts_at.isoformat(),
+                    'endsAt': overlap.ends_at.isoformat()
+                }
+            }), 409
         
         # Create session
         session = Session(
@@ -103,7 +136,7 @@ def create_manual_session():
             starts_at=starts_at,
             ends_at=ends_at,
             late_threshold_minutes=late_threshold,
-            status='SCHEDULED',  # Start as SCHEDULED
+            status=status,
             auto_created=False,
             created_at=datetime.utcnow()
         )
@@ -112,8 +145,9 @@ def create_manual_session():
         db.session.commit()
         
         return jsonify({
-            'message': 'Session created successfully',
-            'session': session.to_dict()
+            'message': f"Session created and {'activated' if status == 'ACTIVE' else 'scheduled'} successfully",
+            'session': session.to_dict(),
+            'status': status
         }), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -201,12 +235,58 @@ def get_active_sessions():
     """Get all currently active sessions"""
     try:
         from db import Session
+        now = datetime.utcnow()
         
-        active_sessions = Session.query.filter_by(status='ACTIVE').all()
+        active_sessions = Session.query.filter(
+            Session.status == 'ACTIVE',
+            Session.starts_at <= now,
+            Session.ends_at >= now
+        ).all()
         
         return jsonify({
             'count': len(active_sessions),
             'sessions': [s.to_dict() for s in active_sessions]
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@session_mgmt_bp.route('/status', methods=['GET'])
+def get_session_status():
+    """Get high-level session status overview"""
+    try:
+        from db import db, Session
+
+        now = datetime.utcnow()
+
+        active_session = Session.query.filter(
+            Session.status == 'ACTIVE',
+            Session.starts_at <= now,
+            Session.ends_at >= now
+        ).order_by(Session.starts_at.asc()).first()
+
+        next_scheduled = Session.query.filter(
+            Session.status == 'SCHEDULED',
+            Session.starts_at >= now
+        ).order_by(Session.starts_at.asc()).first()
+
+        status_counts = Session.query.with_entities(
+            Session.status,
+            db.func.count(Session.id)
+        ).group_by(Session.status).all()
+
+        counts = {status: count for status, count in status_counts}
+
+        last_completed = Session.query.filter_by(status='COMPLETED').order_by(
+            Session.ends_at.desc()
+        ).first()
+
+        return jsonify({
+            'activeSession': active_session.to_dict() if active_session else None,
+            'nextScheduled': next_scheduled.to_dict() if next_scheduled else None,
+            'statusCounts': counts,
+            'lastCompleted': last_completed.to_dict() if last_completed else None,
+            'timestamp': now.isoformat()
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

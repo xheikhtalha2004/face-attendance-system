@@ -4,6 +4,10 @@ Delete, Update, and View registered students with safety checks
 """
 from flask import Blueprint, request, jsonify
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError
+import re
+
+EMAIL_REGEX = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 student_mgmt_bp = Blueprint('student_management', __name__, url_prefix='/api/students')
 
@@ -46,21 +50,44 @@ def update_student(student_id):
             return jsonify({'error': 'Student not found'}), 404
         
         data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        # Validate roll number uniqueness
+        if 'rollNumber' in data and data['rollNumber']:
+            proposed_roll = data['rollNumber'].strip()
+            if Student.query.filter(
+                Student.student_id == proposed_roll,
+                Student.id != student_id
+            ).first():
+                return jsonify({'error': f'Roll number {proposed_roll} already exists'}), 409
+
+        # Validate email format if provided
+        if 'email' in data and data['email']:
+            if not EMAIL_REGEX.match(data['email'].strip()):
+                return jsonify({'error': 'Invalid email format'}), 400
         
         # Update allowed fields
-        if 'name' in data:
+        if 'name' in data and data['name']:
             student.name = data['name'].strip()
-        if 'rollNumber' in data:
+        if 'rollNumber' in data and data['rollNumber']:
             student.student_id = data['rollNumber'].strip()
-        if 'email' in data:
+        if 'email' in data and data['email']:
             student.email = data['email'].strip()
-        if 'phone' in data:
+        if 'phone' in data and data['phone']:
             student.phone = data['phone'].strip()
-        if 'department' in data:
+        if 'department' in data and data['department']:
             student.department = data['department'].strip()
         
         student.updated_at = datetime.utcnow()
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError as ie:
+            db.session.rollback()
+            return jsonify({'error': 'Constraint violation', 'details': str(ie.orig)}), 409
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'error': 'Database error', 'details': str(e)}), 500
         
         return jsonify({
             'message': 'Student updated successfully',
@@ -74,11 +101,19 @@ def update_student(student_id):
 def delete_student(student_id):
     """Delete a student and all associated data (embeddings, attendance)"""
     try:
-        from db import db, Student
+        from db import db, Student, Attendance
         
         student = Student.query.get(student_id)
         if not student:
             return jsonify({'error': 'Student not found'}), 404
+
+        # Prevent deleting students that already have attendance history
+        has_attendance = Attendance.query.filter_by(student_id_fk=student_id).first()
+        if has_attendance:
+            return jsonify({
+                'error': 'Cannot delete student with existing attendance records',
+                'attendanceRecords': True
+            }), 409
         
         # Store info before deletion
         student_name = student.name
@@ -135,8 +170,8 @@ def get_student_attendance(student_id):
         if not student:
             return jsonify({'error': 'Student not found'}), 404
         
-        records = Attendance.query.filter_by(student_id=student_id).order_by(
-            Attendance.marked_at.desc()
+        records = Attendance.query.filter_by(student_id_fk=student_id).order_by(
+            Attendance.check_in_time.desc()
         ).all()
         
         return jsonify({
