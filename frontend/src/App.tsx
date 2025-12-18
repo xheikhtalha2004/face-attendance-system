@@ -9,6 +9,8 @@ import EnhancedRecognition from './components/EnhancedRecognition';
 import { SessionAttendanceTable } from './components/SessionAttendanceTable';
 import { StudentRegistrationForm } from './components/StudentRegistrationForm';
 import TestingPanel from './components/TestingPanel';
+import StudentManagement from './components/StudentManagement';
+import SessionManagement from './components/SessionManagement';
 import { AppProvider } from './context/AppContext';
 
 const MainLayout: React.FC = () => {
@@ -20,7 +22,8 @@ const MainLayout: React.FC = () => {
       case 'dashboard': return <Dashboard />;
       case 'registration': return <StudentRegistrationForm />;
       case 'recognition': return <EnhancedRecognition />;
-      case 'students': return <StudentRegistrationForm />;
+      case 'students': return <StudentManagement />;
+      case 'sessions': return <SessionManagement />;
       case 'timetable': return <TimetablePage />;
       case 'attendance': return <SessionAttendanceTable autoRefresh={true} />;
       case 'reports': return <Reports />;

@@ -18,6 +18,7 @@ class Student(db.Model):
     student_id = db.Column(db.String(50), unique=True, nullable=False)
     department = db.Column(db.String(100))
     email = db.Column(db.String(120))
+    phone = db.Column(db.String(20))
     photo_path = db.Column(db.String(255))
     face_encoding = db.Column(db.LargeBinary)  # Store face encoding as BLOB
     status = db.Column(db.String(20), default='Active')
@@ -32,9 +33,10 @@ class Student(db.Model):
         return {
             'id': str(self.id),
             'name': self.name,
-            'studentId': self.student_id,
+            'rollNumber': self.student_id,
             'department': self.department or 'General',
-            'email': self.email,
+            'email': self.email or '',
+            'phone': self.phone or '',
             'photoUrl': f'/api/uploads/{self.photo_path}' if self.photo_path else None,
             'status': self.status,
             'createdAt': self.created_at.isoformat(),

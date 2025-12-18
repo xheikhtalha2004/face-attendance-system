@@ -228,6 +228,12 @@ def get_student_all_embeddings(student_id):
     return embeddings
 
 
+def get_all_students():
+    """Get all registered students"""
+    from db import Student
+    return Student.query.filter_by(status='Active').all()
+
+
 def get_all_students_with_embeddings():
     """Get all students with their embeddings for recognition"""
     from db import Student

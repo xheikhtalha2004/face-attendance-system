@@ -63,6 +63,12 @@ app.register_blueprint(registration_bp)
 from enrollment_api import enrollment_bp
 app.register_blueprint(enrollment_bp)
 
+from student_management_api import student_mgmt_bp
+app.register_blueprint(student_mgmt_bp)
+
+from session_management_api import session_mgmt_bp
+app.register_blueprint(session_mgmt_bp)
+
 # Initialize scheduler service for auto-session creation
 from scheduler_service import init_scheduler
 scheduler = init_scheduler(app)

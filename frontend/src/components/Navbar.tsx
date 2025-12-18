@@ -72,6 +72,20 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
               >
                 Reports
               </button>
+              <button
+                onClick={() => onNavigate('students')}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'students' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+              >
+                Students
+              </button>
+              <button
+                onClick={() => onNavigate('sessions')}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${currentView === 'sessions' ? 'text-indigo-600 bg-indigo-50' : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+              >
+                Sessions
+              </button>
             </div>
 
             <div className="h-6 w-px bg-gray-200 mx-1"></div>
