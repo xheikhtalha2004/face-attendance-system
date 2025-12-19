@@ -10,19 +10,13 @@ INSIGHTFACE_MODEL = 'buffalo_l'  # 'buffalo_l' (best accuracy) or 'buffalo_sc' (
 USE_GPU = False  # Set True to use CUDA GPU (requires onnxruntime-gpu)
 
 # ============================================================================
-# Face Detection
+# Face Detection (YuNet)
 # ============================================================================
-FACE_DETECTOR_METHOD = 'yunet'  # Options: 'haar', 'hog', 'yunet' (recommended)
 MIN_FACE_SIZE = 80  # Minimum face width/height in pixels
-
-# YuNet Specific Parameters (only used when FACE_DETECTOR_METHOD='yunet')
 YUNET_SCORE_THRESHOLD = 0.9  # Detection confidence threshold (0-1, higher = stricter)
 YUNET_NMS_THRESHOLD = 0.3    # Non-maximum suppression (0-1, lower = fewer overlaps)
 YUNET_TOP_K = 5000           # Max detections before NMS
 YUNET_MODEL_PATH = None      # Auto-download to ml_cvs/models/ if None
-
-# Legacy detection size (for RetinaFace in face_engine.py)
-DETECTION_SIZE = (640, 640)  # RetinaFace detection resolution
 
 # ============================================================================
 # Quality Gates
@@ -48,11 +42,8 @@ SIMILARITY_THRESHOLD = 0.35  # Cosine similarity threshold (0.30-0.45 range)
                              # Higher = more lenient matching
 
 # ============================================================================
-# Multi-frame Stabilization (K-of-N)
+# Attendance Cooldown
 # ============================================================================
-K_MATCHES_REQUIRED = 5  # Minimum matches in window to confirm
-N_FRAME_WINDOW = 10  # Rolling window size (frames)
-AGGREGATION_METHOD = 'median'  # 'median' or 'mean' for score aggregation
 COOLDOWN_SECONDS = 120  # Cooldown period after attendance marked (2 minutes)
 
 # ============================================================================

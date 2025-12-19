@@ -122,38 +122,6 @@ class FaceDetector:
         
         return faces
     
-    def get_face_locations(self, image: np.ndarray) -> List[dict]:
-        """
-        Get face locations with normalized coordinates
-        Includes confidence scores and landmarks for YuNet detector
-        
-        Returns:
-            List of dicts with face location info
-        """
-        faces = self.detect_faces(image)
-        height, width = image.shape[:2]
-        
-        face_locations = []
-        for i, (x, y, w, h) in enumerate(faces):
-            face_info = {
-                'index': i,
-                'box': {
-                    'x': int(x),
-                    'y': int(y),
-                    'width': int(w),
-                    'height': int(h)
-                },
-                'normalized': {
-                    'x': x / width,
-                    'y': y / height,
-                    'width': w / width,
-                    'height': h / height
-                }
-            }
-            face_locations.append(face_info)
-        
-        return face_locations
-    
     def extract_face_region(self, image: np.ndarray, location: Tuple[int, int, int, int], 
                            padding: float = 0.2) -> Optional[np.ndarray]:
         """

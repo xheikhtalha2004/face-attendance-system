@@ -40,14 +40,9 @@ try:
 except Exception as e:
     print(f"   [ERROR] InsightFace error: {e}")
 
-# Test 3: Stabilizer
-print("\n3. Testing Stabilizer...")
-try:
-    from ml_cvs.stabilizer import create_stabilizer
-    stabilizer = create_stabilizer(k=5, n=10, cooldown=120)
-    print(f"   [OK] Stabilizer created (K=5, N=10)")
-except Exception as e:
-    print(f"   [ERROR] Stabilizer error: {e}")
+# Additional system tests below
+print("\n3. System ready for testing")
+
 
 # Test 4: API Blueprints
 print("\n4. Testing API Blueprints...")
