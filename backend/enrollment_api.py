@@ -56,3 +56,21 @@ def get_all_enrollments():
         return jsonify([e.to_dict() for e in enrollments]), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@enrollment_bp.route('/api/enrollments/<int:enrollment_id>', methods=['DELETE'])
+def delete_enrollment(enrollment_id):
+    """
+    Delete an enrollment (unenroll student from course)
+    """
+    try:
+        enrollment = Enrollment.query.get(enrollment_id)
+        if not enrollment:
+            return jsonify({'error': 'Enrollment not found'}), 404
+        
+        db.session.delete(enrollment)
+        db.session.commit()
+        
+        return jsonify({'message': 'Unenrolled successfully'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

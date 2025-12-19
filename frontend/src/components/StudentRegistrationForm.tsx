@@ -21,6 +21,7 @@ export const StudentRegistrationForm: React.FC = () => {
     name: '',
     studentId: '',
     email: '',
+    phone: '',
     department: '',
     selectedCourses: [] as number[],
   });
@@ -118,6 +119,7 @@ export const StudentRegistrationForm: React.FC = () => {
         name: formData.name,
         studentId: formData.studentId,
         email: formData.email,
+        phone: formData.phone,
         department: formData.department,
         frames: frames,
         selectedCourses: formData.selectedCourses,
@@ -129,6 +131,7 @@ export const StudentRegistrationForm: React.FC = () => {
         name: '',
         studentId: '',
         email: '',
+        phone: '',
         department: '',
         selectedCourses: [],
       });
@@ -229,6 +232,18 @@ export const StudentRegistrationForm: React.FC = () => {
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
               placeholder="alice@example.com"
+            />
+          </div>
+
+          {/* Phone Number */}
+          <div>
+            <label className="block text-sm font-semibold mb-2">Phone Number (Optional)</label>
+            <input
+              type="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="+92 300 1234567"
             />
           </div>
 

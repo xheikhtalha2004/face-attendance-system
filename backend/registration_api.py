@@ -34,6 +34,7 @@ def self_register():
         name = data.get('name')
         student_id = data.get('studentId')
         email = data.get('email')
+        phone = data.get('phone')
         department = data.get('department') or 'General'
         frames = data.get('frames', [])
         selected_courses = data.get('selectedCourses', [])
@@ -114,6 +115,7 @@ def self_register():
             student_id=student_id,
             department=department,
             email=email,
+            phone=phone,
             face_encoding=result['embeddings'][0]
         )
 

@@ -176,3 +176,139 @@ def get_student_attendance(student_id):
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@student_mgmt_bp.route('/<int:student_id>/enrollments', methods=['GET'])
+def get_student_enrollments(student_id):
+    """Get all course enrollments for a student"""
+    try:
+        from db import Student, Enrollment, Course
+        
+        student = Student.query.filter_by(id=student_id, deleted_at=None).first()
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        enrollments = Enrollment.query.filter_by(student_id=student_id).all()
+        
+        result = []
+        for enrollment in enrollments:
+            course = Course.query.get(enrollment.course_id)
+            if course:
+                result.append({
+                    'id': enrollment.id,
+                    'courseId': course.id,
+                    'courseName': course.course_name,
+                    'professorName': course.professor_name,
+                    'enrolledAt': enrollment.enrolled_at.isoformat() if hasattr(enrollment, 'enrolled_at') else None
+                })
+        
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@student_mgmt_bp.route('/<int:student_id>/enroll', methods=['POST'])
+def enroll_student_in_course(student_id):
+    """Enroll a student in a course"""
+    try:
+        from db import db, Student, Enrollment, Course
+        
+        student = Student.query.filter_by(id=student_id, deleted_at=None).first()
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        data = request.get_json()
+        course_id = data.get('courseId')
+        
+        if not course_id:
+            return jsonify({'error': 'Course ID is required'}), 400
+        
+        course = Course.query.get(course_id)
+        if not course:
+            return jsonify({'error': 'Course not found'}), 404
+        
+        # Check if already enrolled
+        existing = Enrollment.query.filter_by(student_id=student_id, course_id=course_id).first()
+        if existing:
+            return jsonify({'error': 'Student already enrolled in this course'}), 409
+        
+        enrollment = Enrollment(student_id=student_id, course_id=course_id)
+        db.session.add(enrollment)
+        db.session.commit()
+        
+        return jsonify({
+            'message': f'Enrolled in {course.course_name}',
+            'enrollment': {
+                'id': enrollment.id,
+                'courseId': course.id,
+                'courseName': course.course_name
+            }
+        }), 201
+    except Exception as e:
+        from app import app
+        app.logger.error(f"Enrollment error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@student_mgmt_bp.route('/<int:student_id>/update-face', methods=['POST'])
+def update_student_face(student_id):
+    """Update facial data for a student"""
+    try:
+        from app import app
+        from db import db, Student, StudentEmbedding
+        
+        student = Student.query.filter_by(id=student_id, deleted_at=None).first()
+        if not student:
+            return jsonify({'error': 'Student not found'}), 404
+        
+        data = request.get_json()
+        frames = data.get('frames', [])
+        
+        if not frames or len(frames) < 5:
+            return jsonify({'error': 'At least 5 frames are required'}), 400
+        
+        # Process new facial data
+        try:
+            from enrollment_service import process_enrollment_frames
+            result = process_enrollment_frames(frames, max_embeddings=10)
+            
+            if not result['success']:
+                return jsonify({
+                    'error': f'Face processing failed: {result.get("message", "Unknown error")}',
+                    'details': result
+                }), 400
+            
+            # Delete old embeddings
+            StudentEmbedding.query.filter_by(student_id=student_id).delete()
+            
+            # Save new embeddings
+            from db import create_student_embedding
+            embeddings_saved = 0
+            for emb, quality in zip(result['embeddings'], result['quality_scores']):
+                create_student_embedding(
+                    student_id=student_id,
+                    embedding=emb,
+                    quality_score=quality
+                )
+                embeddings_saved += 1
+            
+            # Update primary face encoding
+            student.face_encoding = result['embeddings'][0]
+            student.updated_at = datetime.utcnow()
+            db.session.commit()
+            
+            app.logger.info(f"Updated face data for student {student.student_id}: {embeddings_saved} embeddings")
+            
+            return jsonify({
+                'message': f'Facial data updated successfully ({embeddings_saved} embeddings)',
+                'embeddingsSaved': embeddings_saved
+            }), 200
+            
+        except Exception as e:
+            app.logger.error(f"Face processing error: {str(e)}")
+            import traceback
+            app.logger.error(traceback.format_exc())
+            return jsonify({'error': f'Face processing failed: {str(e)}'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
