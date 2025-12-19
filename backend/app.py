@@ -377,23 +377,23 @@ def recognize_face():
         # Extract embedding
         query_embedding = faces[0]['embedding']
         
-        # Load enrolled students for this course
+        # Load ALL registered students (not just enrolled ones)
+        # This allows us to detect intruders (registered but not enrolled)
         from db import Enrollment, Student, db
-        enrolled_students = db.session.query(Student).join(Enrollment).filter(
-            Enrollment.course_id == active_session.course_id
-        ).all()
-        
-        if not enrolled_students:
-            return jsonify({
-                'recognized': False, 
-                'message': 'No students enrolled in this course'
-            }), 200
-        
-        # Get their embeddings
         import pickle
         from db import get_student_all_embeddings
+        
+        all_students = Student.query.filter(Student.deleted_at.is_(None)).all()
+        
+        if not all_students:
+            return jsonify({
+                'recognized': False, 
+                'message': 'No students registered in system'
+            }), 200
+        
+        # Get embeddings for ALL students
         student_data = []
-        for student in enrolled_students:
+        for student in all_students:
             embeddings = get_student_all_embeddings(student.id)
             if embeddings:
                 student_data.append((
@@ -405,7 +405,7 @@ def recognize_face():
         if not student_data:
             return jsonify({
                 'recognized': False, 
-                'message': 'No facial data available for enrolled students'
+                'message': 'No facial data available for any registered students'
             }), 200
         
         # Use single-pass matching with a 0.60 similarity threshold
