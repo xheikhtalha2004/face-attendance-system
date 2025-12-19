@@ -319,6 +319,7 @@ def upsert_attendance(session_id, student_id, status='PRESENT', confidence=None,
                      method='AUTO', notes=None, snapshot_path=None):
     """Create or update attendance record (upsert)"""
     from db import db, Attendance, Session
+    from datetime import datetime
     
     # Check existing
     existing = Attendance.query.filter_by(
@@ -328,7 +329,7 @@ def upsert_attendance(session_id, student_id, status='PRESENT', confidence=None,
     
     if existing:
         # Update existing record
-        existing.last_seen_time = datetime.utcnow()
+        existing.last_seen_time = datetime.now()
         if confidence and confidence > (existing.confidence or 0):
             existing.confidence = confidence
         if notes:
@@ -338,18 +339,19 @@ def upsert_attendance(session_id, student_id, status='PRESENT', confidence=None,
     else:
         # Create new record
         session = Session.query.get(session_id)
+        current_time = datetime.now()
         
-        # Determine status based on time
+        # Determine status based on time (compare local times)
         if status == 'PRESENT':
             late_cutoff = session.starts_at + timedelta(minutes=session.late_threshold_minutes)
-            if datetime.now() > late_cutoff:
+            if current_time > late_cutoff:
                 status = 'LATE'
         
         attendance = Attendance(
             session_id=session_id,
             student_id_fk=student_id,
-            check_in_time=datetime.now(),
-            last_seen_time=datetime.now(),
+            check_in_time=current_time,
+            last_seen_time=current_time,
             status=status,
             confidence=confidence,
             method=method,

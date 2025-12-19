@@ -78,12 +78,17 @@ class SessionSchedulerService:
         """
         with self.app.app_context():
             try:
+                # Use local datetime for current time comparisons
                 now = datetime.now()
                 current_day = now.strftime('%A').upper()  # MONDAY, TUESDAY, etc.
                 current_time = now.time()
                 
                 # Get active time slots for today
                 slots = get_active_slots_for_day(current_day)
+                
+                if not slots:
+                    logger.debug(f"No active slots for {current_day}")
+                    return
                 
                 for slot in slots:
                     # Parse slot times
@@ -131,14 +136,14 @@ class SessionSchedulerService:
                             logger.info(f"Auto-created session for {course.course_name} "
                                       f"at {slot.start_time} (Session ID: {session.id})")
                             
-                            # Schedule absentee marking
-                            self._schedule_mark_absentees(
-                                session.id,
-                                today_start + timedelta(minutes=slot.late_threshold_minutes + 5)
-                            )
+                            # Schedule absentee marking (after late threshold + 5 minutes buffer)
+                            absentee_time = today_start + timedelta(minutes=slot.late_threshold_minutes + 5)
+                            self._schedule_mark_absentees(session.id, absentee_time)
             
             except Exception as e:
                 logger.error(f"Error in check_and_create_sessions: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
     
     def _schedule_mark_absentees(self, session_id, run_time):
         """
@@ -165,19 +170,24 @@ class SessionSchedulerService:
         """Auto-activate scheduled sessions that have reached their start time"""
         with self.app.app_context():
             try:
-                now = datetime.utcnow()
+                # Use local datetime for local time-based sessions
+                now = datetime.now()
                 due_sessions = Session.query.filter(
                     Session.status == 'SCHEDULED',
                     Session.starts_at <= now,
                     Session.ends_at > now
                 ).all()
 
+                if not due_sessions:
+                    return
+
                 activated = 0
                 for session in due_sessions:
                     session.status = 'ACTIVE'
                     activated += 1
+                    logger.info(f"Auto-activated session {session.id} ({session.course_id})")
 
-                if activated:
+                if activated > 0:
                     db.session.commit()
                     logger.info(f"Auto-activated {activated} scheduled session(s)")
             except Exception as e:
@@ -207,6 +217,8 @@ class SessionSchedulerService:
     def mark_absentees_for_session(self, session_id):
         """
         Mark all students without attendance as ABSENT
+        Called after late threshold has passed
+        Only marks enrolled students who never appeared
         
         Args:
             session_id: Session ID to process
@@ -222,26 +234,35 @@ class SessionSchedulerService:
                 enrolled = Enrollment.query.filter_by(course_id=session.course_id).all()
                 enrolled_ids = [e.student_id for e in enrolled]
                 
-                # Get students with attendance in this session
-                attendance_records = get_attendance_by_session(session_id)
-                present_student_ids = set(a.student_id_fk for a in attendance_records)
+                if not enrolled_ids:
+                    logger.info(f"No enrolled students for session {session_id}")
+                    session.status = 'COMPLETED'
+                    db.session.commit()
+                    return
                 
-                # Find absent students
+                # Get students with attendance in this session (only PRESENT or LATE)
+                attendance_records = get_attendance_by_session(session_id)
+                present_student_ids = set(a.student_id_fk for a in attendance_records 
+                                         if a.status in ['PRESENT', 'LATE'])
+                
+                # Find absent students (enrolled but never marked attendance)
                 absent_student_ids = [sid for sid in enrolled_ids if sid not in present_student_ids]
                 
                 # Mark them absent
                 if absent_student_ids:
                     marked = mark_students_absent(session_id, absent_student_ids)
-                    logger.info(f"Marked {len(marked)} students as absent for session {session_id}")
+                    logger.info(f"Marked {len(marked)} students as ABSENT for session {session_id}")
                 
                 # Update session status to COMPLETED
                 session.status = 'COMPLETED'
                 db.session.commit()
                 
-                logger.info(f"Session {session_id} marked as COMPLETED")
+                logger.info(f"Session {session_id} completed and attendance finalized")
                 
             except Exception as e:
                 logger.error(f"Error marking absentees for session {session_id}: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
 
 
 # Global scheduler instance
