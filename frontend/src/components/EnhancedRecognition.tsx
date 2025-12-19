@@ -92,7 +92,17 @@ const EnhancedRecognition: React.FC = () => {
   useEffect(() => {
     fetchActiveSession();
 
+    // Poll for active session every 30s until one is found
+    const poll = setInterval(() => {
+      if (!session) {
+        fetchActiveSession();
+      } else {
+        clearInterval(poll);
+      }
+    }, 30000);
+
     return () => {
+      clearInterval(poll);
       stopCamera();
     };
   }, []);
