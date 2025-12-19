@@ -31,13 +31,14 @@ export const StudentRegistrationForm: React.FC = () => {
   const [captureSession, setCaptureSession] = useState(0); // forces new capture component
 
   const DEPARTMENTS = [
-    'Computer Science',
-    'Software Engineering',
-    'Electrical Engineering',
-    'Artificial Intelligence',
-    'Business Administration',
-    'Mathematics',
-    'Physics',
+    { name: 'Computer Science', code: 'BCS' },
+    { name: 'Software Engineering', code: 'BSE' },
+    { name: 'Electrical Engineering', code: 'BEE' },
+    { name: 'Artificial Intelligence', code: 'BAI' },
+    { name: 'Business Administration', code: 'BBA' },
+    { name: 'Accounting & Finance', code: 'BAF' },
+    { name: 'Mathematics', code: 'BMA' },
+    { name: 'Physics', code: 'BPH' },
   ];
 
   useEffect(() => {
@@ -64,7 +65,7 @@ export const StudentRegistrationForm: React.FC = () => {
       if (response.data.validFormat && response.data.available) {
         setValidationMessage({ type: 'success', text: 'ID format is valid and available' });
       } else if (!response.data.validFormat) {
-        setValidationMessage({ type: 'error', text: 'Invalid format (use SPXX-BCS-XXX, e.g. SP21-BCS-001)' });
+        setValidationMessage({ type: 'error', text: 'Invalid format (use YYXX-BZZ-XXX, e.g. SP23-BCS-103, FA22-BSE-072)' });
       } else {
         setValidationMessage({ type: 'error', text: 'This student ID is already registered' });
       }
@@ -193,7 +194,7 @@ export const StudentRegistrationForm: React.FC = () => {
               value={formData.studentId}
               onChange={handleStudentIdChange}
               className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-              placeholder="SPXX-BCS-XXX (e.g., SP21-BCS-001)"
+              placeholder="YYXX-BZZ-XXX (e.g., SP23-BCS-103, FA22-BSE-072)"
               required
             />
             {validationMessage && (
@@ -216,8 +217,8 @@ export const StudentRegistrationForm: React.FC = () => {
             >
               <option value="">Select department</option>
               {DEPARTMENTS.map((dept) => (
-                <option key={dept} value={dept}>
-                  {dept}
+                <option key={dept.code} value={dept.name}>
+                  {dept.name} ({dept.code})
                 </option>
               ))}
             </select>

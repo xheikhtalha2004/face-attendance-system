@@ -8,8 +8,9 @@ import re
 registration_bp = Blueprint('registration', __name__)
 
 def validate_student_id(student_id):
-    """Validate SPXX-BCS-XXX format"""
-    pattern = r'^SP\d{2}-BCS-\d{3}$'
+    """Validate YYXX-BZZ-XXX format (e.g., SP23-BCS-103, FA22-BSE-072)"""
+    # YY = SP or FA (intake), XX = year (2 digits), BZZ = dept code (2-3 letters), XXX = roll no (3 digits)
+    pattern = r'^(SP|FA)\d{2}-[A-Z]{2,3}-\d{3}$'
     return re.match(pattern, student_id) is not None
 
 @registration_bp.route('/api/register/student', methods=['POST'])
@@ -19,10 +20,11 @@ def self_register():
     Request JSON:
     {
         "name": "Alice Smith",
-        "studentId": "SP21-BCS-001",
+        "studentId": "SP23-BCS-103",
         "email": "alice@test.com",
-        "department": "Software Engineering",
-        "frames": [...],  # 15 base64 frames
+        "phone": "+92 300 1234567",
+        "department": "Computer Science",
+        "frames": [...],  # 5-15 base64 frames
         "selectedCourses": [1, 2]  # Course IDs
     }
     """
@@ -47,7 +49,7 @@ def self_register():
             return jsonify({'error': 'Department is required'}), 400
 
         if not validate_student_id(student_id):
-            return jsonify({'error': 'Invalid Student ID format. Use SPXX-BCS-XXX (e.g., SP21-BCS-001)'}), 400
+            return jsonify({'error': 'Invalid Student ID format. Use YYXX-BZZ-XXX (e.g., SP23-BCS-103, FA22-BSE-072)'}), 400
 
         if not frames or len(frames) < 5:
             return jsonify({'error': 'At least 5 facial frames are required for enrollment'}), 400
