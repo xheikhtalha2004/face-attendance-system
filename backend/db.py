@@ -360,7 +360,7 @@ def get_student_by_student_id(student_id_str):
     return Student.query.filter_by(student_id=student_id_str, deleted_at=None).first()
 
 
-def create_student(name, student_id, department=None, email=None, photo_path=None, face_encoding=None):
+def create_student(name, student_id, department=None, email=None, phone=None, photo_path=None, face_encoding=None):
     """Create new student or reactivate soft-deleted student with same ID"""
     from db_helpers import delete_student_embedding
     
@@ -372,6 +372,7 @@ def create_student(name, student_id, department=None, email=None, photo_path=Non
         existing.name = name
         existing.department = department
         existing.email = email
+        existing.phone = phone
         existing.photo_path = photo_path
         existing.face_encoding = face_encoding
         existing.status = 'Active'
@@ -398,6 +399,7 @@ def create_student(name, student_id, department=None, email=None, photo_path=Non
         student_id=student_id,
         department=department,
         email=email,
+        phone=phone,
         photo_path=photo_path,
         face_encoding=face_encoding,
         status='Active'
