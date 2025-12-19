@@ -4,13 +4,13 @@ import axios from 'axios';
 import { API_BASE_URL } from '../utils/apiConfig';
 
 interface AttendanceRecord {
-  id: number;
-  student_id: number;
-  student_name: string;
-  session_id: number;
+  id: string;
+  studentId: string;
+  studentName: string;
+  sessionId: number;
   status: string;
-  check_in_time: string;
-  last_seen_time: string | null;
+  checkInTime: string;
+  lastSeenTime: string | null;
   confidence: number;
   method: string;
   notes: string | null;
@@ -126,11 +126,11 @@ const Reports: React.FC = () => {
     // Generate CSV content
     const headers = ['Student ID', 'Student Name', 'Status', 'Check In Time', 'Last Seen', 'Confidence', 'Method'];
     const rows = dataToExport.map(record => [
-      record.student_id,
-      record.student_name,
+      record.studentId,
+      record.studentName,
       record.status,
-      new Date(record.check_in_time).toLocaleString(),
-      record.last_seen_time ? new Date(record.last_seen_time).toLocaleString() : 'N/A',
+      new Date(record.checkInTime).toLocaleString(),
+      record.lastSeenTime ? new Date(record.lastSeenTime).toLocaleString() : 'N/A',
       `${(record.confidence * 100).toFixed(1)}%`,
       record.method
     ]);
@@ -286,19 +286,19 @@ const Reports: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-bold">
-                            {record.student_name.charAt(0)}
+                            {record.studentName?.charAt(0) || '?'}
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-gray-900">{record.student_name}</div>
-                            <div className="text-xs text-gray-500">ID: {record.student_id}</div>
+                            <div className="text-sm font-medium text-gray-900">{record.studentName || 'Unknown'}</div>
+                            <div className="text-xs text-gray-500">ID: {record.studentId}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
-                        {new Date(record.check_in_time).toLocaleString()}
+                        {new Date(record.checkInTime).toLocaleString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
-                        {record.last_seen_time ? new Date(record.last_seen_time).toLocaleString() : '-'}
+                        {record.lastSeenTime ? new Date(record.lastSeenTime).toLocaleString() : '-'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
