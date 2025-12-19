@@ -95,13 +95,9 @@ class SessionSchedulerService:
                     slot_start_time = datetime.strptime(slot.start_time, '%H:%M').time()
                     slot_end_time = datetime.strptime(slot.end_time, '%H:%M').time()
                     
-                    # Check if we're within the slot time window
-                    # Create session at start time (with 2-minute buffer)
-                    time_diff = (datetime.combine(now.date(), current_time) - 
-                                datetime.combine(now.date(), slot_start_time)).total_seconds()
-                    
-                    # Create session if we're within first 2 minutes of slot start
-                    if 0 <= time_diff <= 120:  # 0-2 minutes after start
+                    # If current time is within the slot window, ensure a session exists
+                    in_window = (slot_start_time <= current_time <= slot_end_time)
+                    if in_window:
                         # Check if session already exists for this slot today
                         from db import Session
                         
