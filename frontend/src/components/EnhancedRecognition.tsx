@@ -87,6 +87,7 @@ const EnhancedRecognition: React.FC = () => {
   const [isIntruder, setIsIntruder] = useState(false);
   const [isReEntry, setIsReEntry] = useState(false);
   const [attendanceMarked, setAttendanceMarked] = useState(false);
+  const [isLate, setIsLate] = useState(false);
 
   useEffect(() => {
     fetchActiveSession();
@@ -197,6 +198,7 @@ const EnhancedRecognition: React.FC = () => {
     setIsIntruder(false);
     setIsReEntry(false);
     setAttendanceMarked(false);
+    setIsLate(false);
 
     try {
       const response = await axios.post(`${API_BASE_URL}/test-recognition`, {
@@ -222,13 +224,24 @@ const EnhancedRecognition: React.FC = () => {
 
               if (attendanceResult.intruder) {
                 setIsIntruder(true);
+                setAttendanceMarked(false);
+                setIsLate(false);
                 setMessage(`🚨 INTRUDER DETECTED: ${studentName} (${confidence}%) is NOT enrolled in this course!`);
               } else if (attendanceResult.reEntry) {
                 setIsReEntry(true);
+                setAttendanceMarked(false);
+                setIsLate(false);
                 setMessage(`⚠️ RE-ENTRY: ${studentName} (${confidence}%) was already marked ${attendanceResult.attendance?.status || 'PRESENT'}!`);
               } else {
+                const status = attendanceResult.attendance?.status || 'PRESENT';
                 setAttendanceMarked(true);
-                setMessage(`✅ ATTENDANCE MARKED: ${studentName} (${confidence}%) - ${attendanceResult.attendance?.status || 'PRESENT'}`);
+                setIsLate(status === 'LATE');
+                
+                if (status === 'LATE') {
+                  setMessage(`⏰ LATE ARRIVAL: ${studentName} (${confidence}%) - Marked as LATE`);
+                } else {
+                  setMessage(`✅ ATTENDANCE MARKED: ${studentName} (${confidence}%) - ${status}`);
+                }
               }
             } catch (attendanceError: any) {
               console.error('Attendance marking error:', attendanceError);
@@ -316,13 +329,26 @@ const EnhancedRecognition: React.FC = () => {
       )}
 
       {/* Success Alert */}
-      {attendanceMarked && (
+      {attendanceMarked && !isLate && (
         <div className="mb-4 p-4 bg-green-100 border-2 border-green-500 rounded-lg">
           <div className="flex items-center gap-2">
             <span className="text-2xl">✅</span>
             <div>
               <h3 className="font-bold text-green-900">ATTENDANCE MARKED!</h3>
-              <p className="text-green-800 text-sm">Student attendance recorded successfully.</p>
+              <p className="text-green-800 text-sm">Student arrived on time. Attendance recorded successfully.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Late Arrival Alert */}
+      {attendanceMarked && isLate && (
+        <div className="mb-4 p-4 bg-yellow-100 border-2 border-yellow-500 rounded-lg">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">⏰</span>
+            <div>
+              <h3 className="font-bold text-yellow-900">LATE ARRIVAL!</h3>
+              <p className="text-yellow-800 text-sm">Student arrived after the late threshold. Marked as LATE.</p>
             </div>
           </div>
         </div>
@@ -332,6 +358,7 @@ const EnhancedRecognition: React.FC = () => {
       <div className={`mb-6 p-4 rounded-lg ${
         isIntruder ? 'bg-red-100 border-2 border-red-400' :
         isReEntry ? 'bg-orange-100 border-2 border-orange-400' :
+        isLate ? 'bg-yellow-100 border-2 border-yellow-400' :
         attendanceMarked ? 'bg-green-100 border-2 border-green-400' :
         isProcessing ? 'bg-yellow-100 border border-yellow-300' : 
         'bg-gray-100 border border-gray-300'
