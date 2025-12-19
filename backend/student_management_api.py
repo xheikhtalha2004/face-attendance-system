@@ -29,7 +29,7 @@ def get_student_detail(student_id):
     """Get detailed student information"""
     try:
         from db import Student
-        student = Student.query.get(student_id)
+        student = Student.query.filter_by(id=student_id, deleted_at=None).first()
         
         if not student:
             return jsonify({'error': 'Student not found'}), 404
@@ -45,7 +45,7 @@ def update_student(student_id):
     try:
         from db import db, Student
         
-        student = Student.query.get(student_id)
+        student = Student.query.filter_by(id=student_id, deleted_at=None).first()
         if not student:
             return jsonify({'error': 'Student not found'}), 404
         
@@ -53,12 +53,13 @@ def update_student(student_id):
         if not data:
             return jsonify({'error': 'No data provided'}), 400
 
-        # Validate roll number uniqueness
+        # Validate roll number uniqueness (exclude soft-deleted students)
         if 'rollNumber' in data and data['rollNumber']:
             proposed_roll = data['rollNumber'].strip()
             if Student.query.filter(
                 Student.student_id == proposed_roll,
-                Student.id != student_id
+                Student.id != student_id,
+                Student.deleted_at == None
             ).first():
                 return jsonify({'error': f'Roll number {proposed_roll} already exists'}), 409
 
@@ -99,28 +100,21 @@ def update_student(student_id):
 
 @student_mgmt_bp.route('/<int:student_id>', methods=['DELETE'])
 def delete_student(student_id):
-    """Delete a student and all associated data (embeddings, attendance)"""
+    """Soft delete a student (mark as deleted, keeps record for history)"""
     try:
-        from db import db, Student, Attendance
+        from db import db, Student
+        from datetime import datetime
         
-        student = Student.query.get(student_id)
+        student = Student.query.filter_by(id=student_id, deleted_at=None).first()
         if not student:
             return jsonify({'error': 'Student not found'}), 404
 
-        # Prevent deleting students that already have attendance history
-        has_attendance = Attendance.query.filter_by(student_id_fk=student_id).first()
-        if has_attendance:
-            return jsonify({
-                'error': 'Cannot delete student with existing attendance records',
-                'attendanceRecords': True
-            }), 409
-        
         # Store info before deletion
         student_name = student.name
         student_id_val = student.id
         
-        # Delete cascades to embeddings and attendance records
-        db.session.delete(student)
+        # Soft delete - just set deleted_at timestamp
+        student.deleted_at = datetime.utcnow()
         db.session.commit()
         
         return jsonify({
@@ -140,7 +134,7 @@ def get_student_embeddings(student_id):
     try:
         from db import Student, StudentEmbedding
         
-        student = Student.query.get(student_id)
+        student = Student.query.filter_by(id=student_id, deleted_at=None).first()
         if not student:
             return jsonify({'error': 'Student not found'}), 404
         

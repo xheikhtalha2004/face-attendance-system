@@ -2,7 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { Download, Calendar, FileText, BookOpen } from 'lucide-react';
 import axios from 'axios';
 import { API_BASE_URL } from '../utils/apiConfig';
-import { useApp } from '../context/AppContext';
+
+interface AttendanceRecord {
+  id: number;
+  student_id: number;
+  student_name: string;
+  session_id: number;
+  status: string;
+  check_in_time: string;
+  last_seen_time: string | null;
+  confidence: number;
+  method: string;
+  notes: string | null;
+}
 
 interface Session {
   id: number;
@@ -14,23 +26,47 @@ interface Session {
 }
 
 const Reports: React.FC = () => {
-  const { attendance } = useApp();
   const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
+  const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<number | null>(null);
+  const [sessionAttendance, setSessionAttendance] = useState<AttendanceRecord[]>([]);
   const [reportType, setReportType] = useState<'daily' | 'session'>('daily');
+  const [loading, setLoading] = useState(false);
 
-  const filteredAttendance = attendance.filter(record =>
-    new Date(record.timestamp).toISOString().split('T')[0] === dateFilter
-  );
-
+  // Fetch attendance data when date filter or report type changes
   useEffect(() => {
-    if (reportType === 'session') {
+    if (reportType === 'daily') {
+      fetchDailyAttendance();
+    } else {
       fetchSessions();
     }
-  }, [reportType]);
+  }, [dateFilter, reportType]);
+
+  // Fetch session attendance when session is selected
+  useEffect(() => {
+    if (selectedSession) {
+      fetchSessionAttendance();
+    }
+  }, [selectedSession]);
+
+  const fetchDailyAttendance = async () => {
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/attendance`, {
+        params: { date: dateFilter }
+      });
+      setAttendance(response.data);
+    } catch (error) {
+      console.error('Error fetching daily attendance:', error);
+      setAttendance([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchSessions = async () => {
+    setLoading(true);
     try {
       const response = await axios.get(`${API_BASE_URL}/sessions`);
       // Filter to get sessions for the selected date
@@ -40,6 +76,24 @@ const Reports: React.FC = () => {
       setSessions(dateSessions);
     } catch (error) {
       console.error('Error fetching sessions:', error);
+      setSessions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSessionAttendance = async () => {
+    if (!selectedSession) return;
+    
+    setLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE_URL}/sessions/${selectedSession}/attendance`);
+      setSessionAttendance(response.data);
+    } catch (error) {
+      console.error('Error fetching session attendance:', error);
+      setSessionAttendance([]);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -67,15 +121,18 @@ const Reports: React.FC = () => {
   };
 
   const handleExportCSV = () => {
+    const dataToExport = reportType === 'daily' ? attendance : sessionAttendance;
+    
     // Generate CSV content
-    const headers = ['ID', 'Student Name', 'Date', 'Time', 'Status', 'Confidence'];
-    const rows = filteredAttendance.map(record => [
-      record.id,
-      record.studentName,
-      new Date(record.timestamp).toLocaleDateString(),
-      new Date(record.timestamp).toLocaleTimeString(),
+    const headers = ['Student ID', 'Student Name', 'Status', 'Check In Time', 'Last Seen', 'Confidence', 'Method'];
+    const rows = dataToExport.map(record => [
+      record.student_id,
+      record.student_name,
       record.status,
-      `${record.confidence.toFixed(2)}%`
+      new Date(record.check_in_time).toLocaleString(),
+      record.last_seen_time ? new Date(record.last_seen_time).toLocaleString() : 'N/A',
+      `${(record.confidence * 100).toFixed(1)}%`,
+      record.method
     ]);
 
     const csvContent = "data:text/csv;charset=utf-8," 
@@ -89,6 +146,8 @@ const Reports: React.FC = () => {
     link.click();
     document.body.removeChild(link);
   };
+
+  const displayAttendance = reportType === 'daily' ? attendance : sessionAttendance;
 
   return (
     <div className="space-y-6">
@@ -107,15 +166,14 @@ const Reports: React.FC = () => {
               onChange={(e) => setDateFilter(e.target.value)}
             />
           </div>
-          {reportType === 'daily' && (
-            <button
-              onClick={handleExportCSV}
-              className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium"
-            >
-              <Download className="w-4 h-4" />
-              Export CSV
-            </button>
-          )}
+          <button
+            onClick={handleExportCSV}
+            disabled={displayAttendance.length === 0}
+            className="flex items-center gap-2 bg-white border border-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 transition text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" />
+            Export CSV
+          </button>
         </div>
       </div>
 
@@ -149,7 +207,9 @@ const Reports: React.FC = () => {
       {reportType === 'session' && (
         <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
           <h3 className="text-lg font-semibold text-gray-900 mb-3">Select Session</h3>
-          {sessions.length > 0 ? (
+          {loading ? (
+            <p className="text-gray-500">Loading sessions...</p>
+          ) : sessions.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {sessions.map((session) => (
                 <div
@@ -158,7 +218,7 @@ const Reports: React.FC = () => {
                   className={`p-3 border rounded-lg cursor-pointer transition ${
                     selectedSession === session.id
                       ? 'border-indigo-300 bg-indigo-50'
-                      : 'border-gray-200 hover:border-gray-300'
+                      : 'border-gray-200 hover:border-gray-300 hover:shadow-md'
                   }`}
                 >
                   <h4 className="font-medium text-gray-900">{session.courseName}</h4>
@@ -166,6 +226,11 @@ const Reports: React.FC = () => {
                   <p className="text-sm text-gray-500">
                     {new Date(session.startsAt).toLocaleTimeString()} - {new Date(session.endsAt).toLocaleTimeString()}
                   </p>
+                  <span className={`inline-block mt-2 px-2 py-1 text-xs rounded ${
+                    session.status === 'ACTIVE' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+                  }`}>
+                    {session.status}
+                  </span>
                 </div>
               ))}
             </div>
@@ -194,74 +259,92 @@ const Reports: React.FC = () => {
         </div>
       )}
 
+      {/* Attendance Table */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Student</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Time In</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Confidence</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filteredAttendance.length > 0 ? (
-                filteredAttendance.map((record) => (
-                  <tr key={record.id} className="hover:bg-gray-50 transition">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-bold">
-                          {record.studentName.charAt(0)}
+        {loading ? (
+          <div className="p-12 text-center text-gray-500">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto mb-4"></div>
+            <p>Loading attendance data...</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Student</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Check In Time</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Last Seen</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Confidence</th>
+                  <th className="px-6 py-4 text-xs font-semibold text-gray-500 uppercase tracking-wider">Method</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {displayAttendance.length > 0 ? (
+                  displayAttendance.map((record) => (
+                    <tr key={record.id} className="hover:bg-gray-50 transition">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 text-xs font-bold">
+                            {record.student_name.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="text-sm font-medium text-gray-900">{record.student_name}</div>
+                            <div className="text-xs text-gray-500">ID: {record.student_id}</div>
+                          </div>
                         </div>
-                        <div>
-                          <div className="text-sm font-medium text-gray-900">{record.studentName}</div>
-                          <div className="text-xs text-gray-500">ID: {record.studentId}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
+                        {new Date(record.check_in_time).toLocaleString()}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
+                        {record.last_seen_time ? new Date(record.last_seen_time).toLocaleString() : '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          record.status === 'PRESENT' 
+                            ? 'bg-green-100 text-green-800' 
+                            : record.status === 'LATE'
+                            ? 'bg-yellow-100 text-yellow-800'
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {record.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-indigo-500 rounded-full" 
+                              style={{ width: `${record.confidence * 100}%` }}
+                            ></div>
+                          </div>
+                          <span className="text-xs">{(record.confidence * 100).toFixed(1)}%</span>
                         </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {new Date(record.timestamp).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 font-mono">
-                      {new Date(record.timestamp).toLocaleTimeString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        record.status === 'Present' 
-                          ? 'bg-green-100 text-green-800' 
-                          : record.status === 'Late'
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {record.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-indigo-500 rounded-full" 
-                            style={{ width: `${record.confidence}%` }}
-                          ></div>
-                        </div>
-                        <span className="text-xs">{record.confidence.toFixed(1)}%</span>
-                      </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          record.method === 'FACE_RECOGNITION' 
+                            ? 'bg-purple-100 text-purple-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {record.method}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-gray-500">
+                      <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                      <p>No attendance records found for this {reportType === 'daily' ? 'date' : 'session'}.</p>
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={5} className="p-12 text-center text-gray-500">
-                    <FileText className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                    <p>No attendance records found for this date.</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

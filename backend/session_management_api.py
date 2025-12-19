@@ -94,13 +94,13 @@ def create_manual_session():
         except ValueError:
             return jsonify({'error': 'Invalid datetime format. Use ISO format (e.g., 2025-12-17T10:00:00)'}), 400
 
-        # Normalize to naive UTC for consistent comparisons
+        # Normalize to local naive for consistent comparisons with frontend inputs
         if starts_at.tzinfo:
-            starts_at = starts_at.astimezone(timezone.utc).replace(tzinfo=None)
+            starts_at = starts_at.astimezone().replace(tzinfo=None)
         if ends_at.tzinfo:
-            ends_at = ends_at.astimezone(timezone.utc).replace(tzinfo=None)
+            ends_at = ends_at.astimezone().replace(tzinfo=None)
 
-        now = datetime.utcnow()
+        now = datetime.now()
 
         # Validate time logic
         if ends_at <= starts_at:
@@ -198,7 +198,7 @@ def end_session(session_id):
             }), 200
         
         session.status = 'COMPLETED'
-        session.ends_at = datetime.utcnow()  # Update end time to now
+        session.ends_at = datetime.now()  # Update end time to now
         db.session.commit()
         
         return jsonify({
@@ -235,7 +235,7 @@ def get_active_sessions():
     """Get all currently active sessions"""
     try:
         from db import Session
-        now = datetime.utcnow()
+        now = datetime.now()
         
         active_sessions = Session.query.filter(
             Session.status == 'ACTIVE',
@@ -257,7 +257,7 @@ def get_session_status():
     try:
         from db import db, Session
 
-        now = datetime.utcnow()
+        now = datetime.now()
 
         active_session = Session.query.filter(
             Session.status == 'ACTIVE',

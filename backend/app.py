@@ -317,7 +317,7 @@ def get_attendance_records():
 @app.route('/api/recognize', methods=['POST'])
 def recognize_face():
     """
-    Real-time face recognition with K-of-N confirmation and re-entry detection
+    Real-time face recognition (single-pass, threshold-based) with re-entry detection
     """
     try:
         data = request.get_json()
@@ -335,15 +335,15 @@ def recognize_face():
         if frame is None:
             return jsonify({'error': 'Invalid image data'}), 400
         
-        # Get active session
+        # Get active session (auto-closes expired ones)
         from db import get_active_session
         active_session = get_active_session()
         
         if not active_session:
             return jsonify({'recognized': False, 'message': 'No active session'}), 200
         
-        # Initialize face engine and stabilizer (lazy loading)
-        global _face_engine, _stabilizer
+        # Initialize face engine (lazy loading)
+        global _face_engine
         if _face_engine is None:
             try:
                 from ml_cvs.face_engine import create_face_engine
@@ -360,18 +360,6 @@ def recognize_face():
                 return jsonify({
                     'recognized': False,
                     'error': f'Face engine error: {str(e)}'
-                }), 500
-        
-        if _stabilizer is None:
-            try:
-                from ml_cvs.stabilizer import create_stabilizer
-                _stabilizer = create_stabilizer(k=5, n=10, cooldown=120)
-                app.logger.info("Stabilizer initialized")
-            except Exception as e:
-                app.logger.error(f"Stabilizer initialization error: {str(e)}")
-                return jsonify({
-                    'recognized': False,
-                    'error': f'Stabilizer error: {str(e)}'
                 }), 500
         
         # Detect faces
@@ -420,125 +408,126 @@ def recognize_face():
                 'message': 'No facial data available for enrolled students'
             }), 200
         
-        # Find best match
-        match = _face_engine.find_best_match(query_embedding, student_data, threshold=0.35)
+        # Use single-pass matching with a 0.60 similarity threshold
+        confidence_threshold = float(get_settings().get('confidence_threshold', '0.6'))
+        match = _face_engine.find_best_match(query_embedding, student_data, threshold=confidence_threshold)
         
         if not match:
             return jsonify({
                 'recognized': False, 
-                'message': 'Unknown face (not enrolled in this course)'
+                'message': 'Unknown face (not enrolled in this course or below confidence threshold)',
+                'confidenceThreshold': confidence_threshold
             }), 200
         
-        student_id, student_name, similarity = match
-        
-        # Update stabilizer
-        _stabilizer.update(student_id, similarity)
-        
-        # Get progress
-        progress = _stabilizer.get_progress(student_id)
-        
-        # Check K-of-N confirmation
-        confirmed = _stabilizer.get_confirmed()
-        
-        if confirmed:
-            sid, agg_similarity = confirmed
-            
-            # Check if already marked
-            from db import Attendance, ReEntryLog
-            enrollment = Enrollment.query.filter_by(
-                student_id=sid,
-                course_id=active_session.course_id
-            ).first()
-            if not enrollment:
-                app.logger.warning(f"Recognition matched student {sid} not enrolled in course {active_session.course_id}")
-                return jsonify({
-                    'recognized': False,
-                    'message': 'Student recognized but not enrolled in this course',
-                    'studentId': sid
-                }), 403
+        sid, student_name, similarity = match
 
-            existing = Attendance.query.filter_by(
+        # Check enrollment
+        enrollment = Enrollment.query.filter_by(
+            student_id=sid,
+            course_id=active_session.course_id
+        ).first()
+        
+        # Check if already marked (whether enrolled or intruder)
+        from db import Attendance, ReEntryLog
+        existing = Attendance.query.filter_by(
+            session_id=active_session.id,
+            student_id_fk=sid
+        ).first()
+        
+        if existing:
+            # RE-ENTRY DETECTION
+            out_log = ReEntryLog(
                 session_id=active_session.id,
-                student_id_fk=sid
-            ).first()
+                student_id=sid,
+                action='OUT',
+                is_suspicious=True
+            )
+            db.session.add(out_log)
             
-            if existing:
-                # RE-ENTRY DETECTION
-                # Log as OUT then IN
-                out_log = ReEntryLog(
-                    session_id=active_session.id,
-                    student_id=sid,
-                    action='OUT',
-                    is_suspicious=True
-                )
-                db.session.add(out_log)
-                
-                in_log = ReEntryLog(
-                    session_id=active_session.id,
-                    student_id=sid,
-                    action='IN',
-                    is_suspicious=True
-                )
-                db.session.add(in_log)
-                db.session.commit()
-                
-                app.logger.warning(f"Re-entry detected: {student_name} (ID: {sid}) in session {active_session.id}")
-                
-                return jsonify({
-                    'recognized': True,
-                    'confirmed': True,
-                    'alreadyMarked': True,
-                    'reEntry': True,
-                    'studentId': sid,
-                    'studentName': student_name,
-                    'message': 'Re-entry detected! Logged as suspicious.',
-                    'attendance': existing.to_dict()
-                }), 200
+            in_log = ReEntryLog(
+                session_id=active_session.id,
+                student_id=sid,
+                action='IN',
+                is_suspicious=True
+            )
+            db.session.add(in_log)
+            db.session.commit()
             
-            # Mark attendance (first time)
+            app.logger.warning(f"Re-entry detected: {student_name} (ID: {sid}) in session {active_session.id}")
+            
+            return jsonify({
+                'recognized': True,
+                'alreadyMarked': True,
+                'reEntry': True,
+                'studentId': sid,
+                'studentName': student_name,
+                'confidence': round(similarity, 3),
+                'message': 'Re-entry detected! Logged as suspicious.',
+                'attendance': existing.to_dict()
+            }), 200
+        
+        # Determine status based on enrollment
+        if not enrollment:
+            # NOT ENROLLED - Mark as INTRUDER
             from db import upsert_attendance
             attendance = upsert_attendance(
                 session_id=active_session.id,
                 student_id=sid,
-                status='PRESENT',  # Will auto-detect LATE based on time
-                confidence=agg_similarity,
+                status='INTRUDER',
+                confidence=similarity,
                 method='AUTO'
             )
             
-            # Log first entry
-            entry_log = ReEntryLog(
+            intruder_log = ReEntryLog(
                 session_id=active_session.id,
                 student_id=sid,
-                action='IN',
-                is_suspicious=False
+                action='INTRUDER',
+                is_suspicious=True
             )
-            db.session.add(entry_log)
+            db.session.add(intruder_log)
             db.session.commit()
             
-            _stabilizer.mark_confirmed(sid)
-            
-            app.logger.info(f"Attendance marked: {student_name} (ID: {sid}) - {attendance.status}")
+            app.logger.warning(f"⚠️ INTRUDER DETECTED: {student_name} (ID: {sid}) not enrolled in course {active_session.course_id}")
             
             return jsonify({
                 'recognized': True,
-                'confirmed': True,
+                'intruder': True,
                 'studentId': sid,
                 'studentName': student_name,
-                'confidence': round(agg_similarity, 3),
-                'message': f'Attendance marked: {attendance.status}',
-                'attendance': attendance.to_dict(),
-                'session': active_session.to_dict()
+                'confidence': round(similarity, 3),
+                'message': f'⚠️ INTRUDER ALERT: {student_name} is not enrolled in this course!',
+                'attendance': attendance.to_dict()
             }), 200
         
-        # Still verifying (not enough matches yet)
+        # ENROLLED - Mark as PRESENT or LATE
+        from db import upsert_attendance
+        attendance = upsert_attendance(
+            session_id=active_session.id,
+            student_id=sid,
+            status='PRESENT',  # Will auto-detect LATE based on time
+            confidence=similarity,
+            method='AUTO'
+        )
+        
+        entry_log = ReEntryLog(
+            session_id=active_session.id,
+            student_id=sid,
+            action='IN',
+            is_suspicious=False
+        )
+        db.session.add(entry_log)
+        db.session.commit()
+        
+        app.logger.info(f"Attendance marked: {student_name} (ID: {sid}) - {attendance.status} (confidence {round(similarity,3)})")
+        
         return jsonify({
             'recognized': True,
-            'confirmed': False,
-            'verifying': True,
+            'studentId': sid,
             'studentName': student_name,
             'confidence': round(similarity, 3),
-            'message': f'Verifying... ({progress["matched"]}/{progress["required"]})',
-            'progress': progress
+            'message': f'Attendance marked: {attendance.status}',
+            'attendance': attendance.to_dict(),
+            'session': active_session.to_dict()
         }), 200
         
     except Exception as e:
@@ -718,7 +707,6 @@ def test_face_recognition():
 
 # Global instances for face engine and stabilizer
 _face_engine = None
-_stabilizer = None
 
 
 @app.route('/api/attendance/mark', methods=['POST'])

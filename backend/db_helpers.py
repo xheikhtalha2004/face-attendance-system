@@ -148,8 +148,8 @@ def get_active_slots_for_day(day_of_week):
 
 # Session Management
 def determine_initial_status(starts_at, activation_window_minutes=5):
-    """Return ACTIVE if start is now/within window, else SCHEDULED"""
-    now = datetime.utcnow()
+    """Return ACTIVE if start is now/within window, else SCHEDULED (local time)"""
+    now = datetime.now()
     return 'ACTIVE' if starts_at <= now + timedelta(minutes=activation_window_minutes) else 'SCHEDULED'
 
 
@@ -182,15 +182,48 @@ def get_session_by_id(session_id):
 
 def get_active_session(include_stale=False):
     """Get currently active session (optionally include stale ones past end time)"""
-    from db import Session
+    from db import Session, db
+    now_local = datetime.now()
+    now_utc = datetime.utcnow()
+
+    # Auto-close expired active sessions using both local and UTC clocks
+    expired = Session.query.filter(
+        Session.status == 'ACTIVE',
+        Session.ends_at < now_local
+    ).all()
+    if expired:
+        for s in expired:
+            s.status = 'COMPLETED'
+        db.session.commit()
+    else:
+        expired_utc = Session.query.filter(
+            Session.status == 'ACTIVE',
+            Session.ends_at < now_utc
+        ).all()
+        if expired_utc:
+            for s in expired_utc:
+                s.status = 'COMPLETED'
+            db.session.commit()
+
     query = Session.query.filter_by(status='ACTIVE')
 
     if not include_stale:
-        now = datetime.utcnow()
-        query = query.filter(
-            Session.starts_at <= now,
-            Session.ends_at >= now
-        )
+        active = query.filter(
+            Session.starts_at <= now_local,
+            Session.ends_at >= now_local
+        ).order_by(Session.starts_at.asc()).first()
+
+        if not active:
+            # Retry with UTC window in case stored times are UTC-based
+            active = query.filter(
+                Session.starts_at <= now_utc,
+                Session.ends_at >= now_utc
+            ).order_by(Session.starts_at.asc()).first()
+
+        if active:
+            return active
+        # Fall back to the most recent ACTIVE (even if window mismatch) to avoid "no active session" loops
+        return query.order_by(Session.starts_at.desc()).first()
 
     return query.order_by(Session.starts_at.asc()).first()
 
@@ -247,15 +280,15 @@ def get_student_all_embeddings(student_id):
 
 
 def get_all_students():
-    """Get all registered students"""
+    """Get all registered students (excludes soft-deleted)"""
     from db import Student
-    return Student.query.filter_by(status='Active').all()
+    return Student.query.filter_by(status='Active', deleted_at=None).all()
 
 
 def get_all_students_with_embeddings():
-    """Get all students with their embeddings for recognition"""
+    """Get all students with their embeddings for recognition (excludes soft-deleted)"""
     from db import Student
-    students = Student.query.filter_by(status='Active').all()
+    students = Student.query.filter_by(status='Active', deleted_at=None).all()
     result = []
     
     for student in students:
@@ -309,14 +342,14 @@ def upsert_attendance(session_id, student_id, status='PRESENT', confidence=None,
         # Determine status based on time
         if status == 'PRESENT':
             late_cutoff = session.starts_at + timedelta(minutes=session.late_threshold_minutes)
-            if datetime.utcnow() > late_cutoff:
+            if datetime.now() > late_cutoff:
                 status = 'LATE'
         
         attendance = Attendance(
             session_id=session_id,
             student_id_fk=student_id,
-            check_in_time=datetime.utcnow(),
-            last_seen_time=datetime.utcnow(),
+            check_in_time=datetime.now(),
+            last_seen_time=datetime.now(),
             status=status,
             confidence=confidence,
             method=method,

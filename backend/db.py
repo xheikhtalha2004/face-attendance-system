@@ -25,6 +25,7 @@ class Student(db.Model):
     status = db.Column(db.String(20), default='Active')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    deleted_at = db.Column(db.DateTime, nullable=True)  # Soft delete timestamp
     
     # Relationships
     attendance_records = db.relationship('Attendance', backref='student', lazy=True, cascade='all, delete-orphan')
@@ -54,7 +55,7 @@ class Attendance(db.Model):
     student_id_fk = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
     check_in_time = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     last_seen_time = db.Column(db.DateTime)  # For continuous tracking
-    status = db.Column(db.String(20), default='PRESENT')  # PRESENT, LATE, ABSENT
+    status = db.Column(db.String(20), default='PRESENT')  # PRESENT, LATE, ABSENT, INTRUDER
     confidence = db.Column(db.Float)  # Similarity/distance score
     method = db.Column(db.String(50), default='AUTO')  # AUTO (face recognition) or MANUAL
     notes = db.Column(db.Text)
@@ -345,22 +346,53 @@ def init_db(app):
 # CRUD Operations
 
 def get_all_students():
-    """Get all students"""
-    return Student.query.order_by(Student.created_at.desc()).all()
+    """Get all students (excludes soft-deleted)"""
+    return Student.query.filter_by(deleted_at=None).order_by(Student.created_at.desc()).all()
 
 
 def get_student_by_id(student_id):
-    """Get student by ID"""
-    return Student.query.get(student_id)
+    """Get student by ID (excludes soft-deleted)"""
+    return Student.query.filter_by(id=student_id, deleted_at=None).first()
 
 
 def get_student_by_student_id(student_id_str):
-    """Get student by student ID string"""
-    return Student.query.filter_by(student_id=student_id_str).first()
+    """Get student by student ID string (excludes soft-deleted)"""
+    return Student.query.filter_by(student_id=student_id_str, deleted_at=None).first()
 
 
 def create_student(name, student_id, department=None, email=None, photo_path=None, face_encoding=None):
-    """Create new student"""
+    """Create new student or reactivate soft-deleted student with same ID"""
+    from db_helpers import delete_student_embedding
+    
+    # Check if student was previously soft-deleted
+    existing = Student.query.filter_by(student_id=student_id).first()
+    
+    if existing and existing.deleted_at is not None:
+        # Reactivate soft-deleted student
+        existing.name = name
+        existing.department = department
+        existing.email = email
+        existing.photo_path = photo_path
+        existing.face_encoding = face_encoding
+        existing.status = 'Active'
+        existing.deleted_at = None  # Mark as not deleted
+        existing.updated_at = datetime.utcnow()
+        
+        # Clear old embeddings to allow fresh enrollment
+        old_embeddings = StudentEmbedding.query.filter_by(student_id=existing.id).all()
+        for emb in old_embeddings:
+            db.session.delete(emb)
+        
+        # Clear old enrollments to allow re-enrollment
+        from db import Enrollment
+        old_enrollments = Enrollment.query.filter_by(student_id=existing.id).all()
+        for enroll in old_enrollments:
+            db.session.delete(enroll)
+        
+        db.session.commit()
+        return existing
+    
+    # Create new student
     student = Student(
         name=name,
         student_id=student_id,
@@ -391,10 +423,10 @@ def update_student(student_id, **kwargs):
 
 
 def delete_student(student_id):
-    """Delete student"""
+    """Soft delete student (mark as deleted without removing from DB)"""
     student = Student.query.get(student_id)
     if student:
-        db.session.delete(student)
+        student.deleted_at = datetime.utcnow()
         db.session.commit()
         return True
     return False

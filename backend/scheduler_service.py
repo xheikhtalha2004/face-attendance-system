@@ -55,6 +55,14 @@ class SessionSchedulerService:
             id='session_auto_activate',
             replace_existing=True
         )
+        # End expired sessions automatically
+        self.scheduler.add_job(
+            self.end_expired_sessions,
+            'interval',
+            minutes=1,
+            id='session_auto_end',
+            replace_existing=True
+        )
         logger.info("Session checker scheduled (every 1 minute)")
     
     def stop(self):
@@ -174,6 +182,27 @@ class SessionSchedulerService:
                     logger.info(f"Auto-activated {activated} scheduled session(s)")
             except Exception as e:
                 logger.error(f"Error auto-activating sessions: {str(e)}")
+    
+    def end_expired_sessions(self):
+        """Auto-end sessions that have reached their end time"""
+        with self.app.app_context():
+            try:
+                now = datetime.now()
+                expired_sessions = Session.query.filter(
+                    Session.status == 'ACTIVE',
+                    Session.ends_at <= now
+                ).all()
+
+                ended = 0
+                for session in expired_sessions:
+                    session.status = 'COMPLETED'
+                    ended += 1
+
+                if ended:
+                    db.session.commit()
+                    logger.info(f"Auto-ended {ended} expired session(s)")
+            except Exception as e:
+                logger.error(f"Error auto-ending expired sessions: {str(e)}")
     
     def mark_absentees_for_session(self, session_id):
         """
